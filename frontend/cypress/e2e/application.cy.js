@@ -548,7 +548,10 @@ describe('LCA Configuration Tests', () => {
             cy.findByText('Variant saved').should('exist');
             cy.findByRole('textbox', { placeholder: /Variant Name/i }).should('have.value', '');
             cy.get('input[id="variantFrequencyInput"').should('have.value', '15%');
+            cy.visit('http://localhost:3000/'); // Click away to ensure data is actually saved and not just displayed
+            cy.visit('http://localhost:3000/lcavariants');
             cy.get('button.chakra-accordion__button').should('have.length', 1);
+            cy.get('button.chakra-accordion__button').findByText(newVariantName).should('exist');
         });
     });
 });
