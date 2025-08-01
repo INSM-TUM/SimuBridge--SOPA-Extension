@@ -37,7 +37,10 @@ const LcaIntegration = ({ getData, toasting }) => {
   const [normalizationSetId, setNormalizationSetId] = useState(); 
   const [normalizationSets, setNormalizationSets] = useState([]);
 
-  
+  const [calculationType, setCalculationType] = useState("lazy");
+
+
+
   const [progressText, setProgressText] = useState('');
 
   //init
@@ -99,7 +102,7 @@ const LcaIntegration = ({ getData, toasting }) => {
         toasting("info", "Success", "Cost drivers fetched successfully. Normalizing results...");
         setProgressText('Normalizing ...');
         setFetchingProgress(1 / (abstractCostDrivers.length + 1) * 100);
-        calculateCostDrivers(apiUrl, impactMethodId, normalizationSetId, abstractCostDrivers,
+        calculateCostDrivers(apiUrl, impactMethodId, calculationType, normalizationSetId, abstractCostDrivers,
           (progress) => setFetchingProgress(progress),
           (normalizedCostDrivers) => {
             const abstractCostDriversMap = mapAbstractDriversFromConcrete(normalizedCostDrivers);
@@ -208,25 +211,41 @@ const LcaIntegration = ({ getData, toasting }) => {
                 </FormControl>
               }
             </Flex>
-            <Spacer/>
-            {impactMethods && impactMethods.length > 0 && 
+            <Spacer />
+            <Flex mt={1}>
+              {normalizationSets && normalizationSets.length > 0 &&
+                <FormControl>
+                  <FormLabel>Calculation Type</FormLabel>
+                  <Select
+                    value={calculationType}
+                    width="50%"
+                    onChange={(e) => setCalculationType(e.target.value)}
+                  >
+                    <option value="lazy">lazy</option>
+                    <option value="monte carlo">monte carlo</option>
+                  </Select>
+                </FormControl>
+              }
+            </Flex>
+            <Spacer />
+            {impactMethods && impactMethods.length > 0 &&
               <Button
-              id='fetchButton'
-              onClick={handleFetchCostsButtonClick}
-              disabled={isFetchingRunning}
-              isLoading={isFetchingRunning}
-              loadingText={progressText}
-              colorScheme='white'
-              flex='1'
-              variant='outline'
-              border='1px'
-              borderColor='#B4C7C9'
-              color='#6E6E6F'
-              _hover={{ bg: '#B4C7C9' }}
-              ml={2}
-            >
-              Fetch Costs
-            </Button>
+                id='fetchButton'
+                onClick={handleFetchCostsButtonClick}
+                disabled={isFetchingRunning}
+                isLoading={isFetchingRunning}
+                loadingText={progressText}
+                colorScheme='white'
+                flex='1'
+                variant='outline'
+                border='1px'
+                borderColor='#B4C7C9'
+                color='#6E6E6F'
+                _hover={{ bg: '#B4C7C9' }}
+                ml={2}
+              >
+                Fetch Costs
+              </Button>
             }
             {isFetchingRunning &&
               <Progress mt={2} colorScheme='green' size='md' hasStripe
@@ -245,7 +264,7 @@ const LcaIntegration = ({ getData, toasting }) => {
             <CloseButton position='relative' onClick={onClose} />
           </Alert>
         }
-        {isCostDriversLoaded &&
+        {isCostDriversLoaded && !isFetchingRunning &&
           <Card mt={2}>
             <CardHeader>
               <Heading size='md'>{allCostDrivers.length} abstract cost drivers</Heading>
@@ -265,13 +284,17 @@ const LcaIntegration = ({ getData, toasting }) => {
                       </AccordionButton>
                     </h2>
                     <AccordionPanel pb={4}>
-                      <UnorderedList>
+                      {<UnorderedList>
                         {costDriver.concreteCostDrivers.map((concreteCostDriver, index) => (
                           <ListItem key={index}>
-                            <FormattedConcreteDriver concreteCostDriver={concreteCostDriver} />
+
+
+                            <FormattedConcreteDriver concreteCostDriver={concreteCostDriver} cType={calculationType} />
+
+
                           </ListItem>
                         ))}
-                      </UnorderedList>
+                      </UnorderedList>}
                     </AccordionPanel>
                   </AccordionItem>
                 ))}

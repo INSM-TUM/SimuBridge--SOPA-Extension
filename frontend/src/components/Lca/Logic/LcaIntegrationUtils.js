@@ -1,33 +1,46 @@
 import * as openLca from "./OpenLcaConnector.js";
 
-export const calculateCostDrivers = async (apiUrl, impactMethodId, normalizationSetId, costDrivers,
+export const calculateCostDrivers = async (apiUrl, impactMethodId, calculationType, normalizationSetId, costDrivers,
   updateProgress, onSuccess, onError) => {
 
   try {
     const impactMethod = await openLca.getImpactMethod(apiUrl, impactMethodId);
+    //let calculationType = 'lazy' //todo: lazy(default), eager, mc (monte carlo)
 
     let normalizedCostDrivers = [];
-
+    console.log("calculation drivers, type:", calculationType);
     for (const el of costDrivers) {
       await (openLca.calculateCostDriver)(
-        apiUrl, impactMethod, normalizationSetId, el,
+        apiUrl, impactMethod, calculationType, normalizationSetId, el,
         (driverWeights) => {
-          const impactSum = driverWeights.map(i => i.amount || 0).reduce((sum, current) => sum + current, 0);
-          normalizedCostDrivers.push(
-            {
-              id: el.id,
-              name: el.name,
-              category: el.category,
-              cost: impactSum
-            }
-          );
+
+          if(calculationType !==  'monte carlo') {
+            const impactSum = driverWeights.map(i => i.amount || 0).reduce((sum, current) => sum + current, 0);
+            normalizedCostDrivers.push(
+              {
+                id: el.id,
+                name: el.name,
+                category: el.category,
+                cost: impactSum
+              }
+            );
+          } else{
+            normalizedCostDrivers.push(
+              {
+                id: el.id,
+                name: el.name,
+                category: el.category,
+                cost: driverWeights
+              }
+             );
+          }
 
           updateProgress((costDrivers.indexOf(el) + 2) / (costDrivers.length + 1) * 100);
         },
         (error) => onError(error)
       );
     }
-
+    console.log("monte carlo normalizedCostDrivers:", normalizedCostDrivers);
     onSuccess(normalizedCostDrivers);
   }
   catch (error) {
