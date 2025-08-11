@@ -1,6 +1,6 @@
 import * as openLca from "./OpenLcaConnector.js";
 
-export const calculateCostDrivers = async (apiUrl, impactMethodId, calculationType, normalizationSetId, costDrivers,
+export const calculateCostDrivers = async (apiUrl, impactMethodId, calculationType, normalizationSetId, costDrivers, mcIterations,
   updateProgress, onSuccess, onError) => {
 
   try {
@@ -11,7 +11,7 @@ export const calculateCostDrivers = async (apiUrl, impactMethodId, calculationTy
     console.log("calculation drivers, type:", calculationType);
     for (const el of costDrivers) {
       await (openLca.calculateCostDriver)(
-        apiUrl, impactMethod, calculationType, normalizationSetId, el,
+        apiUrl, impactMethod, calculationType, normalizationSetId, mcIterations, el,
         (driverWeights) => {
 
           if(calculationType !==  'monte carlo') {
@@ -30,7 +30,8 @@ export const calculateCostDrivers = async (apiUrl, impactMethodId, calculationTy
                 id: el.id,
                 name: el.name,
                 category: el.category,
-                cost: driverWeights
+                cost: driverWeights,
+                distType: "normal"
               }
              );
           }

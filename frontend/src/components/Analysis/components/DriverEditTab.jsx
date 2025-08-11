@@ -1,0 +1,186 @@
+import { Box, Text, Select, Flex, Button, Input, Grid } from "@chakra-ui/react";
+import { useState } from "react";
+import { DistributionTypes } from "simulation-bridge-datamodel/SimulationModelDescriptor";
+
+const distTypeOptions = ["uniform", "triangular", "normal", "deterministic", "lognormal"];
+
+const DriverEditTab = ({ concreteCostDriver, cType, onUpdate }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [editedDriver, setEditedDriver] = useState({ ...concreteCostDriver });
+    //   console.log("DriverEditTab", concreteCostDriver, editedDriver);
+
+    const handleChange = (field, value) => {
+        if (field === "distType") {
+            setEditedDriver({
+                ...editedDriver,
+                distType: value,
+                cost: { ...editedDriver.cost }, // reset cost when distType changes
+            });
+        } else {
+            let parsedValue = value;
+            if (field === "stdDev" && typeof value === "string" && value.endsWith("%")){ // check if value is stdDev as a percentage
+           
+                const percent = parseFloat(value);
+                const mean = parseFloat(editedDriver.cost.mean || 0);
+                if (!isNaN(percent) && !isNaN(mean)) {
+                    parsedValue = (mean * percent) / 100;
+                }
+            }
+
+            setEditedDriver({
+                ...editedDriver,
+                cost: {
+                    ...editedDriver.cost,
+                    [field]: parsedValue,
+                },
+            });
+
+        }
+            
+        
+    };
+
+
+    const renderCostInputs = () => {
+        const { distType, cost } = editedDriver;
+
+        const labeledInput = (label, field) => (
+            <Flex align="center" gap={1}>
+                <Text fontSize="sm" minWidth="40px">{label}:</Text>
+                {isEditing ? (
+                    <Input
+                        value={cost[field] ?? ""}
+                        onChange={(e) => handleChange(field, e.target.value)}
+                        size="sm"
+                        width="80px"
+                    />
+                    ) : (
+                    (() => {
+                        const [formatted, exp] = formatNumber(cost[field]);
+                        return (
+                        <Text width="80px" fontSize="sm">
+                            {formatted}
+                            {exp !== "0" && exp !== "+0" && (
+                            <Text as="sup" fontWeight="bold">
+                                {parseInt(exp, 10)}
+                            </Text>
+                            )}
+                        </Text>
+                        );
+                    })()
+                    )}
+            </Flex>
+        );
+
+
+        switch (distType) {
+            case "deterministic":
+                return (
+                    <Flex gap={4}>
+                        {labeledInput("Cost", "mean")}
+                    </Flex>
+                );
+            case "uniform":
+                return (
+                        <Flex gap={4}>
+                        {labeledInput("Min", "min")}
+                        {labeledInput("Max", "max")}
+                        </Flex>
+                    );
+            case "triangular":
+                return (
+                    <Flex gap={4}>
+                        {labeledInput("Min", "min")}
+                        {labeledInput("Max", "max")}
+                        {labeledInput("Mode", "mode")}
+                    </Flex>
+                    
+                );
+            case "normal":
+                return (
+                    <Flex gap={4}>
+                       
+                        {labeledInput("Mean", "mean")}
+                        {labeledInput("StdDev", "stdDev")}
+
+                    </Flex>
+                    
+                );
+            default:
+                return null;
+        }
+    };
+
+    const handleSave = () => {
+        onUpdate(editedDriver);
+        setIsEditing(false);
+    };
+    const handleDiscard = () => {
+        setEditedDriver({ ...concreteCostDriver });
+        setIsEditing(false);
+    };
+
+    return (
+        <Grid templateColumns="100px 150px 1fr 100px" gap={4} mb={2} width={"60%"}>
+            <Text>{concreteCostDriver.name}</Text>
+
+            <Select
+                value={editedDriver.distType}
+                onChange={(e) => handleChange("distType", e.target.value)}
+                size="sm"
+                isReadOnly={!isEditing}
+                pointerEvents={!isEditing ? "none" : "auto"}
+                icon={isEditing ? undefined : <></>}
+            >
+                {distTypeOptions.map((opt) => (
+                <option key={opt} value={opt}>
+                    {opt}
+                </option>
+                ))}
+            </Select>
+            
+
+            <Flex gap={2}>{renderCostInputs()}</Flex>
+             <Flex gap={1}>
+                {!isEditing ? (
+                    <Button size="sm" onClick={() => setIsEditing(true)}>
+                        Edit
+                    </Button>
+                ) : (
+                    <>
+                        <Button size="sm" colorScheme="green" onClick={handleSave}>
+                            Save
+                        </Button>
+                        <Button size="sm" onClick={handleDiscard}>
+                            Discard
+                        </Button>
+                    </>
+                )}
+            </Flex>
+        </Grid>
+    );
+};
+
+/**
+ * formats a number into scientific notation with two decimal places
+ * except for 0, which is returned as "0"
+ * and for exponents of 0, which are not shown
+ * @param {number} number 
+ * @returns formattedNumber 
+ * @returns exponent
+ */
+function formatNumber(number) { /// todo this function is used in multiple places, should be moved to a util file
+  if (typeof number !== "number") return ["-", "-"];
+  // console.log("formatNumber called with:", number);
+  if (number === 0) return ["0", "0"];
+  let [coefficient, exponent] = number.toExponential(2).split('e');
+  let formattedNumber;
+  if (exponent === "0" || exponent === "+0" || exponent === "-0") {
+    formattedNumber = coefficient;
+  } else
+    formattedNumber = `${coefficient} × 10`;
+  // console.log("number:", number, "Exponent:", exponent, typeof exponent);
+  return [formattedNumber, exponent];
+}
+
+export default DriverEditTab;

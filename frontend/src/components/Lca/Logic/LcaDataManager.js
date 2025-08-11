@@ -5,9 +5,10 @@ export const getCostDriversFromScenario = (getData) => {
 
     if (scenario) {
         const costDrivers = scenario.environmentImpactParameters.costDrivers;
+        const calcType = scenario.environmentImpactParameters.calcType;
         if (costDrivers) {
             const uniqueCostDrivers = Array.from(new Map(costDrivers.map(item => [item.id, item])).values());
-            return uniqueCostDrivers;
+            return [uniqueCostDrivers, calcType];
         }
     }
     return [];
@@ -29,6 +30,7 @@ export const mapAbstractDriversFromConcrete = (concreteCostDrivers) => {
             id: el.id,
             name: el.name,
             cost: el.cost,
+            distType: el.distType
         });
         if (!abstractCostDriversMap.has(el.category)) {
             let abstractDriver = SimulationModelModdle.getInstance().create("simulationmodel:AbstractCostDriver", {
@@ -46,9 +48,13 @@ export const mapAbstractDriversFromConcrete = (concreteCostDrivers) => {
     return Array.from(abstractCostDriversMap.values());
 };
 
-export const saveAllCostDrivers = async (abstractCostDrivers, getData) => {
+export const saveAllCostDrivers = async (abstractCostDrivers, calcType, getData) => {
+    console.log("[LcaIntegration] saveAllCostDrivers:", abstractCostDrivers, "calcType:", calcType);
     getData().getCurrentScenario().environmentImpactParameters.costDrivers = abstractCostDrivers;
+    getData().getCurrentScenario().environmentImpactParameters.calcType = calcType;
+    console.log("[LcaIntegration] saved AllCostDrivers fin:", getData().getCurrentScenario().environmentImpactParameters);
     await getData().saveCurrentScenario();
+
 };
 
 export const saveCostVariant = async (variant, updatedVariants, getData) => {

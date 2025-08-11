@@ -1,4 +1,5 @@
 import * as o from "olca-ipc";
+const ss = require('simple-statistics');
 
 
 export const getAllImpactMethods = async (apiUrl) => {
@@ -31,7 +32,7 @@ export const getAllCostDrivers = async (apiUrl, onSuccess, onError) => {
 }
 
 const EPSILON = 1e-15;
-export const calculateCostDriver = async (apiUrl, impactMethod, calculationType, normalizationSetId,
+export const calculateCostDriver = async (apiUrl, impactMethod, calculationType, normalizationSetId, mcIterations,
     targetDriver, onSuccess, onError) => {
     // console.log("[calculate Cost Drivers] calculation type: ", calculationType)
     if (calculationType === 'lazy') {
@@ -72,8 +73,7 @@ export const calculateCostDriver = async (apiUrl, impactMethod, calculationType,
         try {
             let normalizationSet = normalizationSetId && impactMethod.nwSets.filter(set => set.id == normalizationSetId)[0];
            
-            let results = await monteCarloJs(apiUrl, targetDriver, impactMethod, normalizationSet) // todo: add iterations dynamically
-            // console.log('Monte carlooooo results of', targetDriver.name, ":", results);
+            let results = await monteCarloJs(apiUrl, targetDriver, impactMethod, normalizationSet, mcIterations) // todo: add iterations dynamically
             for (let i = 0; i < results.length; i++) {
                 // console.log("mc item:", results[i]);
                 const impactSum = results[i].map(i => i.amount || 0).reduce((sum, current) => sum + current, 0);
@@ -109,15 +109,26 @@ export const calculateCostDriver = async (apiUrl, impactMethod, calculationType,
                 stdDev = Math.sqrt(variance);
             }
 
+            const mode = ss.mode(sorted);
+
             const mcEval = {
                 mean: mean,
                 median: median,
                 stdDev: stdDev,
                 min: min,
-                max: max
+                max: max,
+                mode: mode
             }
 
-            console.log('Monte Carlo Evaluation:', mcEval);
+            if(stdDev < EPSILON) {
+                mcEval.distType = "deterministic";
+            }else{
+                const distributions = fitDistributions(results);
+                console.log("Fitted distributions:", distributions);
+            }
+
+
+            // console.log('Monte Carlo Evaluation:', mcEval);
 
             onSuccess(mcEval);
 

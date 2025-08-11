@@ -57,6 +57,7 @@ export const SimulationModelDescriptor = {
             "name" : "EnvironmentImpactParameters",
             "properties": [
                 { "name": "costDrivers", "type": "AbstractCostDriver", isMany : true },
+                { "name": "calcType", "type": "String", default : "lazy" }, // TODO: should be an enum
                 { "name": "variants", "type": "Variant", isMany : true }
             ]
         },
@@ -124,6 +125,7 @@ export const SimulationModelDescriptor = {
                 { "name": "id", "type": "String"},
                 { "name": "name", "type": "String"},
                 { "name": "cost", "type": "Real"},
+                { "name": "distType", "type": "String"},
             ]
         },
         {

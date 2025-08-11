@@ -145,6 +145,7 @@ describe('Inside a project', () => {
             clickButton('Run Simulation').shouldLeadTo('/simulation');
             clickButton('Run Process Miner').shouldLeadTo('/processminer');
             clickButton('OpenLCA Integration').shouldLeadTo('/lcaintegration');
+            clickButton('Uncertainty Analyisis').shouldLeadTo('/analysis');
             clickButton('Project Overview').shouldLeadTo('/overview');
         });
 

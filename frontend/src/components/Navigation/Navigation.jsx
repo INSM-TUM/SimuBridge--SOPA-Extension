@@ -48,6 +48,7 @@ import { downloadData } from '../../util/Storage';
       { name: 'Run Simulation', icon: FiPlay, path: '/simulation', event: () =>  setCurrent("Run Simulation") },
       { name: 'Run Process Miner', icon: FiPlay, path: '/processminer', event: () =>  setCurrent("Run Process Miner") },
       { name: 'OpenLCA Integration', icon: FiServer, path: '/lcaintegration', event: () =>  setCurrent("OpenLCA Integration") },
+      { name: 'Uncertainty Analyisis', icon: FiPlay, path: '/analysis', event: () =>  setCurrent("Uncertainty Analyisis") },
       { name: 'Output Visualization', icon: FiTrello, path: '/visualizer', event: () =>  setCurrent("Output Visualization") },
       // { name: 'Debugging View', icon: FiPlay, path: '/debug', event: () =>  setCurrent("Debug View") }
     ];
