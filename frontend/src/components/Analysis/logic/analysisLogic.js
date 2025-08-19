@@ -77,7 +77,7 @@ function getConcreteCostDriverArray(abstractCostDrivers) {
   const drivers = [];
   for (const abstractDriver of abstractCostDrivers) {
     if (!abstractDriver.concreteCostDrivers) continue;
-    console.log("!!!!!!!!!!!!!abstractDriver:", abstractDriver);
+    // console.log("!!!!!!!!!!!!!abstractDriver:", abstractDriver);
     for (const concrete of abstractDriver.concreteCostDrivers) {
       
       drivers.push({
@@ -149,7 +149,7 @@ function mapSampleMatrixToDistributions(sampleMatrix, drivers) {
 //#region Analysis
 
 // todo: this function can probably be removed
-// const XXrunMonteCarloSimulation = async ({
+// const XXrunMultipleSimulations = async ({
 //   MC_ITERATIONS,
 //   Driver,
 //   simulator
@@ -173,7 +173,8 @@ function mapSampleMatrixToDistributions(sampleMatrix, drivers) {
 const runSimpleMonteCarloSimulation = async ({
   MC_ITERATIONS,
   scenarioData,
-  simulator
+  simulator, 
+  stateReports
 }) => {
   // console.log("[runSimpleMonteCarloSimulation] called with scenarioData", scenarioData, "and mc iterations", MC_ITERATIONS);
   const abstractCostDrivers = scenarioData.environmentImpactParameters.costDrivers;
@@ -182,31 +183,36 @@ const runSimpleMonteCarloSimulation = async ({
   const drivers = getConcreteCostDriverArray(abstractCostDrivers)
   // console.log("[runSimpleMonteCarloSimulation] drivers", drivers);
   const driverCount =drivers.length;
-  console.log("[runSimpleMonteCarloSimulation] called", MC_ITERATIONS, "with", driverCount ,"concrete drivers:", drivers );
+  console.log("[runSimpleMonteCarloSimulation] called", MC_ITERATIONS, " terations, with", driverCount ,"concrete drivers:", drivers );
 
   
   const sampleRandMatrix = createSampleMatrix(MC_ITERATIONS, driverCount)
   // printMatrix(sampleRandMatrix)
 
-
+  printMatrix(sampleRandMatrix)
   const sampleMatrix = mapSampleMatrixToDistributions(sampleRandMatrix, drivers);
   console.log("[runSimpleMonteCarloSimulation] sampleMatrix", sampleMatrix);
   printMatrix(sampleMatrix)
   console.log("[runSimpleMonteCarloSimulation] drivers", drivers);
 
-  return monteCarlo_matrix({
+  const results = await monteCarlo_matrix({
     sampleMatrix,
     drivers,
-    simulator
+    simulator,
+    stateReports
   });
+  console.log("[runSimpleMonteCarloSimulation] complete");
+
+  return results
 }
 
 const monteCarlo_matrix = async ({
   sampleMatrix, // [driver][iteration]
   drivers,
-  simulator
+  simulator,
+  stateReports
 }) => {
-  // console.log("[monteCarlo_matrix] called with drivers", drivers)
+  console.log("[monteCarlo_matrix] called with drivers", drivers)
   const MC_ITERATIONS = sampleMatrix[0].length;
   const driverCount = sampleMatrix.length;
   const simulationResults = [];
@@ -214,19 +220,28 @@ const monteCarlo_matrix = async ({
   // console.log("[monteCarlo_matrix] called with", MC_ITERATIONS, "iterations and", driverCount, "drivers", drivers)
   for (let i = 0; i < MC_ITERATIONS; i++) {
     // Deep copy Driver to avoid mutating input
-    // console.log("[monteCarlo_matrix] driver copy", driver)
     const sampledDrivers = JSON.parse(JSON.stringify(drivers));
-    // console.log("[monteCarlo_matrix] sampledDriver copy", sampledDriver)
+    // console.log("[monteCarlo_matrix] sampledDriver copy", sampledDrivers)
 
     for (let d = 0; d < driverCount; d++) {
-      console.log("[monteCarlo_matrix] set driver", drivers[d].name, "to", sampleMatrix[d][i]);
+      // console.log("[monteCarlo_matrix] set driver", drivers[d].name, "to", sampleMatrix[d][i]);
       sampledDrivers[d].cost = sampleMatrix[d][i];
     }
 
-    console.log("[monteCarlo_matrix] call simulator; round", i, "with", sampledDrivers);
+    // console.log("[monteCarlo_matrix] call simulator; round", i, "with", sampledDrivers);
     const abstractCostDrivers = mapAbstractDriversFromConcrete(sampledDrivers);
-    console.log("[monteCarlo_matrix] Abstract sampledDrivers", abstractCostDrivers);
-    const result = await simulator(abstractCostDrivers);
+    
+    const progress = (i+1)/(MC_ITERATIONS+1) * 100 - 1;
+    console.log("[monteCarlo_matrix ] Abstract sampledDrivers", sampledDrivers, progress);
+    try {
+      stateReports.setStarted(progress);
+    } catch (error) {
+      console.log("[monteCarlo_matrix] error", error);
+    }
+    // stateReports.setStarted(progress);
+
+    console.log("[monteCarlo_matrix] call simulator; ", i+1, "of", MC_ITERATIONS, "with", abstractCostDrivers);
+    const result = await simulator(abstractCostDrivers, i+1);
     if (result) {
       console.log("[monteCarlo_matrix] result", result);
       result.sampleIndex = i;
@@ -235,6 +250,7 @@ const monteCarlo_matrix = async ({
     }
   }
 
+  console.log("[monteCarlo_matrix] simulationResults", simulationResults)
   return simulationResults;
 };
 

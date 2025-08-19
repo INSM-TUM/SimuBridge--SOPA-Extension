@@ -148,7 +148,7 @@ function transposeArray(a) {
 
 async function monteCarloJs(apiUrl, targetDriver, impactMethod, normalizationSet,
     iterations = 10) {
-    let replacement_impactCathegory = {id: "f3138c2e-ea9c-305a-adf6-65e692e5b761"} //todo: replace with the actual impact cathegory; the lazy one doesnt work
+    //let replacement_impactCathegory = {id: "f3138c2e-ea9c-305a-adf6-65e692e5b761"} //todo: replace with the actual impact cathegory; the lazy one doesnt work
     const client = new o.IpcClient.on(apiUrl);
     // schedule a first iteration
     // console.log("[mc] start", targetDriver.id)

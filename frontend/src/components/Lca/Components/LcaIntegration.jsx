@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 import {
   Alert, AlertIcon, AlertDescription, CloseButton, useDisclosure,
@@ -37,7 +37,9 @@ const LcaIntegration = ({ getData, toasting }) => {
   const [normalizationSetId, setNormalizationSetId] = useState(); 
   const [normalizationSets, setNormalizationSets] = useState([]);
 
-  const [calculationType, setCalculationType] = useState("lazy");
+  const [selectedCalcType, setSelectedCalcType] = useState("lazy");
+  const [calcType, setCalcType] = useState("");
+  const [mcIterations, setMcIterations] = useState(10);
 
 
 
@@ -45,13 +47,18 @@ const LcaIntegration = ({ getData, toasting }) => {
 
   //init
   useEffect(() => {
-    const uniqueCostDrivers = getCostDriversFromScenario(getData);
+    const [uniqueCostDrivers, calcType] = getCostDriversFromScenario(getData);
+    console.log("[LcaIntegration] uniqueCostDrivers:", uniqueCostDrivers, "calcType:", calcType);
+    setCalcType(calcType);
+    setSelectedCalcType(calcType);
     setAllCostDrivers(uniqueCostDrivers);
     setIsCostDriversLoaded(uniqueCostDrivers.length > 0);
     setIsScenarioModelLoaded(true);
   }, [getData]);
 
-  
+  //let calculationType = 'lazy' //todo: lazy(default), eager, mc (monte carlo)
+
+
   useEffect(() => {
     if (impactMethodId) {
       const impactMethod = impactMethods.filter(im => im.id == impactMethodId)[0];
@@ -83,10 +90,11 @@ const LcaIntegration = ({ getData, toasting }) => {
     }
     const impactMethodsToBe = await getAllImpactMethods(apiUrl);
     setImpactMethods(impactMethodsToBe);
-    if(impactMethodsToBe.length > 0) {
+    if (impactMethodsToBe.length > 0) {
       setImpactMethodId(impactMethodsToBe[0].id);
     }
   }
+
 
   const handleFetchCostsButtonClick = async () => {
     if (!isApiUrlValid) {
@@ -97,23 +105,27 @@ const LcaIntegration = ({ getData, toasting }) => {
     setProgressText('Fetching ...');
     setFetchingProgress(0);
 
+    console.log("[LcaIntegration] handleFetchCostsButtonClick", apiUrl, impactMethodId, selectedCalcType, normalizationSetId, mcIterations);
+
     await fetchAllCostDrivers(apiUrl,
       (abstractCostDrivers) => {
         toasting("info", "Success", "Cost drivers fetched successfully. Normalizing results...");
         setProgressText('Normalizing ...');
         setFetchingProgress(1 / (abstractCostDrivers.length + 1) * 100);
-        calculateCostDrivers(apiUrl, impactMethodId, calculationType, normalizationSetId, abstractCostDrivers,
+        calculateCostDrivers(apiUrl, impactMethodId, selectedCalcType, normalizationSetId, abstractCostDrivers, mcIterations,
           (progress) => setFetchingProgress(progress),
           (normalizedCostDrivers) => {
             const abstractCostDriversMap = mapAbstractDriversFromConcrete(normalizedCostDrivers);
 
             saveAllCostDrivers(
               abstractCostDriversMap,
+              selectedCalcType,
               getData
             );
 
             toasting("success", "Success", "Cost drivers were successfully saved to the application");
             setIsFetchingRunning(false);
+            setCalcType(selectedCalcType);
             setAllCostDrivers(abstractCostDriversMap);
             setIsCostDriversLoaded(true);
           },
@@ -169,7 +181,7 @@ const LcaIntegration = ({ getData, toasting }) => {
                   </Button>
                 </InputRightElement>
               </InputGroup>
-              
+
               <Button
                 id='fetchIMButton'
                 onClick={handleFetchImpactMethodButtonClick}
@@ -186,9 +198,9 @@ const LcaIntegration = ({ getData, toasting }) => {
                 Fetch Impact Methods
               </Button>
             </Flex>
-            <Spacer/>
+            <Spacer />
             <Flex mt={2}>
-              {impactMethods && impactMethods.length > 0 && 
+              {impactMethods && impactMethods.length > 0 &&
                 <FormControl>
                   <FormLabel>Impact Method</FormLabel>
                   <Select value={impactMethodId} ml={2} flex='2' onChange={({ target: { value, name } }) => setImpactMethodId(value)} >
@@ -199,8 +211,8 @@ const LcaIntegration = ({ getData, toasting }) => {
                 </FormControl>
               }
 
-              
-              {normalizationSets && normalizationSets.length > 0 && 
+
+              {normalizationSets && normalizationSets.length > 0 &&
                 <FormControl>
                   <FormLabel>Normalization Set</FormLabel>
                   <Select value={normalizationSetId} ml={2} flex='2' onChange={({ target: { value, name } }) => setNormalizationSetId(value)} >
@@ -212,21 +224,37 @@ const LcaIntegration = ({ getData, toasting }) => {
               }
             </Flex>
             <Spacer />
-            <Flex mt={1}>
+            
               {normalizationSets && normalizationSets.length > 0 &&
+              <Flex mt={2}>
                 <FormControl>
                   <FormLabel>Calculation Type</FormLabel>
                   <Select
-                    value={calculationType}
-                    width="50%"
-                    onChange={(e) => setCalculationType(e.target.value)}
+                    value={selectedCalcType}
+                    ml={2} flex='2'
+                    onChange={(e) => setSelectedCalcType(e.target.value)}
                   >
                     <option value="lazy">lazy</option>
                     <option value="monte carlo">monte carlo</option>
                   </Select>
                 </FormControl>
-              }
-            </Flex>
+                {selectedCalcType === "monte carlo" && (
+                <FormControl>
+                  <FormLabel>Number of Iterations</FormLabel>
+                  <Input
+                    type="number"
+                    value={mcIterations}
+                    onChange={(e) => setMcIterations(parseInt(e.target.value) || 1)}
+                    min={1}
+                    max={10000} // optional upper limit
+                    backgroundColor="white"
+                    ml={2} flex='2'
+                  />
+                </FormControl>
+                    )}
+              </Flex>}
+            
+            
             <Spacer />
             {impactMethods && impactMethods.length > 0 &&
               <Button
@@ -271,8 +299,8 @@ const LcaIntegration = ({ getData, toasting }) => {
             </CardHeader>
             <CardBody>
               <Accordion allowToggle>
-                {allCostDrivers.map((costDriver, index) => (
-                  <AccordionItem key={index}>
+                {allCostDrivers.map((costDriver, abstractIndex) => (
+                  <AccordionItem key={abstractIndex}>
                     <h2>
                       <AccordionButton>
                         <Box flex="1" textAlign="left">
@@ -285,11 +313,23 @@ const LcaIntegration = ({ getData, toasting }) => {
                     </h2>
                     <AccordionPanel pb={4}>
                       {<UnorderedList>
-                        {costDriver.concreteCostDrivers.map((concreteCostDriver, index) => (
-                          <ListItem key={index}>
+                        {costDriver.concreteCostDrivers.map((concreteCostDriver, concreteIndex) => (
+                          <ListItem key={concreteIndex}>
 
 
-                            <FormattedConcreteDriver concreteCostDriver={concreteCostDriver} cType={calculationType} />
+                            <FormattedConcreteDriver concreteCostDriver={concreteCostDriver} cType={calcType} onUpdate={(updatedConcreteDriver) => {
+                              const updatedConcreteCostDrivers = [...costDriver.concreteCostDrivers];
+                              updatedConcreteCostDrivers[concreteIndex] = updatedConcreteDriver;
+                              //concreteCostDriver[index] = updatedConcreteDriver;
+                              console.log("[lcaInt on formComponent] updated cost concrete drivers", concreteIndex, updatedConcreteCostDrivers)
+                              const updatedAbstractCostDrivers = [...allCostDrivers];
+                              updatedAbstractCostDrivers[abstractIndex].concreteCostDrivers = updatedConcreteCostDrivers
+                              console.log("[lcaInt on formComponent] updated abstract cost drivers", abstractIndex, updatedAbstractCostDrivers)
+
+                              setAllCostDrivers(updatedAbstractCostDrivers);
+                              console.log("[lcaInt on formComponent] updated all cost drivers", allCostDrivers);
+                              saveAllCostDrivers(updatedAbstractCostDrivers, calcType , getData);
+                            }} />
 
 
                           </ListItem>

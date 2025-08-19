@@ -215,7 +215,16 @@ function createOneConcreteCostDriver(concreteCostDriver) { // aka createOneCon
     var attributes = new Object;
     attributes.id = concreteCostDriver.id;
     attributes.name = concreteCostDriver.name;
-    attributes.cost = concreteCostDriver.cost;
+
+    //attributes.cost = concreteCostDriver.cost;
+    //differentiate between lazy and distributed cost
+     if (typeof concreteCostDriver.cost !== 'object' || concreteCostDriver.cost === null) {
+        attributes.cost = concreteCostDriver.cost;
+    } else {
+        //put structured cost outside of _attributes
+        attributes.cost = concreteCostDriver.cost.mean;
+    }
+
     item._attributes = attributes;
     return item;
 }

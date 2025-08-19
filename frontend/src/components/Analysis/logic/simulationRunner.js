@@ -5,18 +5,19 @@ import {runSimpleMonteCarloSimulation} from "./analysisLogic";
 
 
 // This is the main entry point called from your component
-export const runMonteCarloSimulation = async ({
+export const runMultipleSimulations = async ({
   scenarioName,
-  MC_ITERATIONS,
+  mcIterations: MC_ITERATIONS,
   getData,
   projectName,
   stateReports,
   source, 
   analysisName
 }) => {
+    console.log("[runMultipleSimulations] called with scenarioName", scenarioName, "and mc iterations", MC_ITERATIONS);
     let variants = getData().getCurrentScenario().environmentImpactParameters.variants;
     console.log("start simulation, Vaiants:", variants)
-    if(variants.reduce((sum, variant) => sum + parseInt(variant.frequency), 0) != 100) ///todo: If variants have non-integer frequencies (e.g., decimals), the current sum check will fail.
+    if(variants.reduce((sum, variant) => sum + parseInt(variant.frequency), 0) !== 100) ///todo: If variants have non-integer frequencies (e.g., decimals), the current sum check will fail.
     {
       stateReports.toasting("error", "Frequencies sum is not 100%", "For correct simulation, the sum of frequencies must be 100%");
       
@@ -24,36 +25,31 @@ export const runMonteCarloSimulation = async ({
     }// todo: add warning for multiple of same abstract in same variant (not allowed)
 
     stateReports.setFinished(false);
-    stateReports.setStarted(true);
+    stateReports.setStarted(5);
     try {
       const scenarioData = getData().getScenario(scenarioName);
-      console.log('ScenarioData', scenarioData);
+      // console.log('ScenarioData', scenarioData);
       
 
       const simulator = createSimulator(scenarioData, scenarioName, stateReports, source, projectName);
+      let simulationResults = [];
 
       switch(analysisName)
       {
         case "monte carlo":
           console.log("runSimpleMonteCarloSimulation with scenarioData", scenarioData, "and mc iterations", MC_ITERATIONS);
-          await runSimpleMonteCarloSimulation({MC_ITERATIONS, scenarioData, simulator});
+          simulationResults = await runSimpleMonteCarloSimulation({MC_ITERATIONS, scenarioData, simulator, stateReports});
+          simulationResults.finished = new Date().getTime();
+          console.log("simulation Run completed");
           break;
         case "local SA":
-          await simulator();
+          simulationResults = await simulator();
+          break;
+        default:
+          console.log("Unknown analysis name:", analysisName);
           break;
       }
 
-      const simulationResults = [];
-      // for (let i = 0; i < MC_ITERATIONS; i++) {
-        
-      //   const sampledGlobalConfig  = await getGlobalConfigSample(i, globalConfig); 
-      //   const result = await simulate(sampledGlobalConfig, simConfig, scenarioName, processModel, bpmn, stateReports, source, projectName);
-      //   if (result) {
-      //     result.sampleIndex = i;                   
-      //     result.sampledConfig = sampledGlobalConfig;    
-      //     simulationResults.push(result);
-      //   }
-      // }
       
       stateReports.setStarted(false);
       stateReports.setFinished(true);
@@ -61,6 +57,8 @@ export const runMonteCarloSimulation = async ({
       stateReports.toasting("success", "Monte Carlo Simulation", `Completed ${MC_ITERATIONS} simulations`);
       console.log("Simulation Results:", simulationResults);
       sessionStorage.setItem(projectName + '/monteCarloResults', JSON.stringify(simulationResults));
+      stateReports.setResponse(simulationResults);
+      // stateReports.setResponse(responseObject);
 
       // stateReports.toasting a success message
       stateReports.toasting("success", "Success", "Analysis was successful");
@@ -70,7 +68,7 @@ export const runMonteCarloSimulation = async ({
     }catch (err) {
       stateReports.setStarted(false);
       stateReports.setErrored(true);
-      console.error("[Analysis Mistake]", err);
+      console.log("[Analysisss Mistake]", err);
       stateReports.toasting("error", "Error", "Analysis was not successful");
     }
   }
@@ -83,18 +81,21 @@ export const runMonteCarloSimulation = async ({
    * @param {*} projectName 
    * @returns 
    */
-  function createSimulator(scenarioData, scenarioName,stateReports, source, projectName) {
-  return async function (drivers) {
-    console.log("[createSimulator()] drivers", drivers, scenarioData);
+  function createSimulator(scenarioData, scenarioName, stateReports, source, projectName) {
+  return async function (drivers, iteration) {
+    // console.log("[createSimulator()] drivers", drivers, scenarioData);
     // Deep copy to avoid mutating original
+   
+    let scenarioName_i = scenarioName+"_"+iteration;
     const scenarioCopy = structuredClone(scenarioData);
     scenarioCopy.environmentImpactParameters.costDrivers = drivers;
 
-    console.log("[createSimulator()] scenarioCopy", scenarioCopy);
+    // console.log("[createSimulator()] scenarioCopy", scenarioCopy);
     const {globalConfig, simConfigs} = await convertScenario( scenarioCopy);
+    scenarioCopy.scenarioName = scenarioName_i
 
-    console.log("globalConfig", globalConfig);
-    console.log("simConfigs", simConfigs[0]);
+    // console.log("globalConfig", globalConfig);
+    // console.log("simConfigs", simConfigs[0]);
 
     const simConfig = simConfigs[0]; //TODO magic index access
     const processModel = scenarioData.models[0]; //TODO magic index access
@@ -102,7 +103,7 @@ export const runMonteCarloSimulation = async ({
     let bpmn = processModel.BPMN;
     bpmn = bpmn.replace(/'/g, "");
     //console.log('BPMN', bpmn);
-    return await simulate(globalConfig, simConfig, scenarioName, processModel, bpmn, stateReports, source, projectName);
+    return await simulate(globalConfig, simConfig, scenarioName_i, processModel, bpmn, stateReports, source, projectName);
   };
 }
 
@@ -117,12 +118,14 @@ const replaceScenarioDrivers = (drivers, scenarioData) => {
     stateReports.setResponse({ message: "", files: [] });
     stateReports.setErrored(false);
 
+    // console.log("[simulate] called with", globalConfig, simConfig, scenarioName, processModel);
+ 
     const requestId = 'request' + Math.random();
     const formData = new FormData();
   
     // Creating a cancel token and assigning it to the current source
     source.current = axios.CancelToken.source();
-    console.log("[simulate] with global:", globalConfig);
+    // console.log("[simulate] with global:", globalConfig);
     try{
       const bpmnFile = new File([bpmn], processModel.name + '.bpmn')
       const globalConfigFile = new File([globalConfig], scenarioName + '_Global.xml')
@@ -131,7 +134,7 @@ const replaceScenarioDrivers = (drivers, scenarioData) => {
       formData.append("bpmn", bpmnFile, bpmnFile.name);
       formData.append("globalConfig", globalConfigFile, globalConfigFile.name);
       formData.append("simConfig", simConfigFile, simConfigFile.name); 
-      console.log("[simulation] formData", formData);
+      // console.log("[simulation] formData", formData);
 
       // todo: reactivate
       // Sending a POST request to apiTool.py in the Scylla-Container subproject, with the cancel token attached
@@ -145,7 +148,7 @@ const replaceScenarioDrivers = (drivers, scenarioData) => {
       r.data.files.forEach(file => {
         setFile(projectName, requestId + '/' + file.name, file.data);
       })
-      console.log("[simulation] response", r.data);
+      // console.log("[simulation] response", r.data);
 
       // Setting the response state and updating the finished and started states
       
@@ -158,7 +161,8 @@ const replaceScenarioDrivers = (drivers, scenarioData) => {
     // const responseObject = { }
 
 
-    stateReports.setResponse(responseObject);
+    // stateReports.setResponse(responseObject);
+    // console.log("[simulate] response", responseObject);
     // sessionStorage.setItem(projectName+'/lastAlanysisResponse', JSON.stringify(responseObject));
     return responseObject;
     } catch (err) {
@@ -168,11 +172,11 @@ const replaceScenarioDrivers = (drivers, scenarioData) => {
       } else {
         // Otherwise, stateReports.toast an error message
         stateReports.setErrored(true);
-        console.log("[Simulation Mistake]", err)
+        console.log("[Simulation Mistake]", err, globalConfig)
         //TODO also display error occurence
         stateReports.toasting("error", "error", "Simulation was not successful");
       }
-      return null;
+      return {'error': err};
     }
   };
 

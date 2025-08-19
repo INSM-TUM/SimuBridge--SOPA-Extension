@@ -72,7 +72,7 @@ const DriverEditTab = ({ concreteCostDriver, cType, onUpdate }) => {
             </Flex>
         );
 
-
+        // Render cost parameters based on distType
         switch (distType) {
             case "deterministic":
                 return (
@@ -122,7 +122,7 @@ const DriverEditTab = ({ concreteCostDriver, cType, onUpdate }) => {
 
     return (
         <Grid templateColumns="100px 150px 1fr 100px" gap={4} mb={2} width={"60%"}>
-            <Text>{concreteCostDriver.name}</Text>
+            <Text as="span" fontWeight="semibold" color="var(--chakra-colors-gray-500)">{concreteCostDriver.name}</Text>
 
             <Select
                 value={editedDriver.distType}

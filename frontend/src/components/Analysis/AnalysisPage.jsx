@@ -9,7 +9,7 @@ import ToolRunOutputCard from "../ToolRunOutputCard";
 import DriverEditTab from "./components/DriverEditTab";
 import { use } from "react";
 import { min } from "simple-statistics";
-import { runMonteCarloSimulation } from './logic/simulationRunner';
+import { runMultipleSimulations } from './logic/simulationRunner';
 
 const AnalysisPage = ({projectName, getData, toasting }) => {
 
@@ -17,7 +17,7 @@ const AnalysisPage = ({projectName, getData, toasting }) => {
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
   const [errored, setErrored] = useState(false);
-  const [response, setResponse] = useState(JSON.parse(sessionStorage.getItem(projectName+'/lastSimulatorResponse')) || {});
+  const [response, setResponse] = useState(JSON.parse(sessionStorage.getItem(projectName+'/monteCarloResults')) || {});
 
   const [scenarioName, setScenarioName] = useState();
   const [simulator, setSimulator] = useState();
@@ -33,22 +33,23 @@ const AnalysisPage = ({projectName, getData, toasting }) => {
   useEffect(() => {
     // Fetching the scenario names from the data
     let simulationDriverSettings = getData().getCurrentScenario().environmentImpactParameters.costDrivers;
-    console.log("[Analyss Page]  useEffect(): costDrivers", simulationDriverSettings);
+    // console.log("[Analyss Page]  useEffect(): costDrivers", simulationDriverSettings);
   }, [getData]);
 
-  const MC_ITERATIONS = 5; // Set your number of MC iterations here
+  // const MC_ITERATIONS = 5; // Set your number of MC iterations here
   const start = async () => {
     const stateReports = {'toasting':toasting,'setResponse':setResponse,'setStarted':setStarted,'setFinished':setFinished,'setErrored':setErrored} 
 
-    await runMonteCarloSimulation({
+    await runMultipleSimulations({
       scenarioName,
-      MC_ITERATIONS,
+      mcIterations,
       getData,
       projectName,
       stateReports, 
       source, 
       analysisName
     });
+
   }
 
   // Function to abort the simulation
@@ -82,103 +83,103 @@ const AnalysisPage = ({projectName, getData, toasting }) => {
         <Heading size='lg' >Sensitivity Analysis</Heading>
 
         
-        <RunProgressIndicationBar {...{started, finished, errored}}/>
-            <Card bg="white">
-                <CardHeader>
-                    <Heading size='md'> Environmental Simulation Parameters</Heading>
-                </CardHeader>
-                <CardBody>
-                    <Grid templateColumns="100px 150px 1fr 100px" gap={4} mb={2} width={"60%"}>
-                      {/* Header row */}
-                      <Text fontWeight="bold">Name</Text>
-                      <Text fontWeight="bold">Distribution Type</Text>
-                      <Text fontWeight="bold">Cost Parameters</Text>
-                      <Text fontWeight="bold">Actions</Text>
-                    </Grid>
+        
+        <Card bg="white">
+            <CardHeader>
+                <Heading size='md'> Environmental Simulation Parameters</Heading>
+            </CardHeader>
+            <CardBody>
+                <Grid templateColumns="100px 150px 1fr 100px" gap={4} mb={2} width={"60%"}>
+                  {/* Header row */}
+                  <Text fontWeight="bold">Name</Text>
+                  <Text fontWeight="bold">Distribution Type</Text>
+                  <Text fontWeight="bold">Cost Parameters</Text>
+                  <Text fontWeight="bold">Actions</Text>
+                </Grid>
 
 
-                      {/* Rows */}
-                      {simulationDriverSettings.map((abstractDriver, abstractIndex) =>
-                        abstractDriver.concreteCostDrivers.map((concreteDriver, concreteIndex) => (
-                          <DriverEditTab
-                            key={`${abstractIndex}-${concreteIndex}`}
-                            concreteCostDriver={concreteDriver}
-                            cType={null}
-                            onUpdate={() => {}}
-                          />
-                        ))
-                      )}
+                  {/* Rows */}
+                  {simulationDriverSettings.map((abstractDriver, abstractIndex) =>
+                    abstractDriver.concreteCostDrivers.map((concreteDriver, concreteIndex) => (
+                      <DriverEditTab
+                        key={`${abstractIndex}-${concreteIndex}`}
+                        concreteCostDriver={concreteDriver}
+                        cType={null}
+                        onUpdate={() => {}}
+                      />
+                    ))
+                  )}
 
-                </CardBody>
-                <CardHeader>
-                    <Heading size='md'> Start Analysis Run </Heading>
-                </CardHeader>
-                <CardBody>
-                  
-                    <Flex
-                        gap="5"
-                        flexDirection="row"
-                        alignItems="end"
-                        mt="-4"
-                        >               
-                            <Box>
-                                <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold" > Select Analysis:</Text>
-                                <Select value={analysisName} placeholder = 'choose analysis' width = '100%' {...(!analysisName && {color: "gray"})} backgroundColor= 'white' icon={<FiChevronDown />} onChange={evt => setAnalysisName(evt.target.value)}>
-                                {
-                                  analysisTypes.map((type, index) => {
-                                    return  <option value= {type} color="black">{type}</option>
-                                  })
-                                }
-                                </Select>
-                            </Box>
-                            {analysisName === "monte carlo" && (
-                              <Box mt={4}>
-                                <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold">
-                                  Select Iterations:
-                                </Text>
-                                <Input
-                                  type="number"
-                                  value={mcIterations}
-                                  onChange={(e) => setMcIterations(parseInt(e.target.value) || 1)}
-                                  min={1}
-                                  max={10000} // optional upper limit
-                                  backgroundColor="white"
-                                />
-                              </Box>
-                            )}
-                            <Box>
-                                <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold" > Select scenario:</Text>
-                                <Select value={scenarioName} placeholder = 'choose scenario' width = '100%' {...(!scenarioName && {color: "gray"})} backgroundColor= 'white' icon={<FiChevronDown />} onChange={evt => setScenarioName(evt.target.value)}>
-                                {
-                                  getData().getAllScenarios().map((scenario, index) => {
-                                    return  <option value= {scenario.scenarioName} color="black">{scenario.scenarioName}</option>
-                                  })
-                                }
-                                </Select>
-                            </Box>
-                            <Box>
-                                <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold" > Select simulator:</Text>
-                                <Select value={simulator} placeholder = 'choose simulator' width = '100%'  {...(!simulator && {color: "gray"})}  backgroundColor= 'white' icon={<FiChevronDown />} onChange={evt => setSimulator(evt.target.value)}>
-                                    <option value='Scylla' color="black">Scylla</option>
-                                </Select>
-                            </Box>
-                            
-                            {!started&& 
-                            <Button variant="outline" bg="#FFFF" onClick={start} disabled={!scenarioName || !simulator}>
-                                <Text color="RGBA(0, 0, 0, 0.64)" fontWeight="bold">Start Simulation</Text>
-                            </Button>}
-
-                            {started&& 
-                            <Button variant="outline" bg="#FFFF" onClick={abort}>
-                                <Text color="RGBA(0, 0, 0, 0.64)" fontWeight="bold">Abort Simulation</Text>
-                            </Button>
+            </CardBody>
+            <CardHeader>
+                <Heading size='md'> Start Analysis Run </Heading>
+            </CardHeader>
+            <CardBody>
+              
+                <Flex
+                    gap="5"
+                    flexDirection="row"
+                    alignItems="end"
+                    mt="-4"
+                    >               
+                        <Box>
+                            <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold" > Select Analysis:</Text>
+                            <Select value={analysisName} placeholder = 'choose analysis' width = '100%' {...(!analysisName && {color: "gray"})} backgroundColor= 'white' icon={<FiChevronDown />} onChange={evt => setAnalysisName(evt.target.value)}>
+                            {
+                              analysisTypes.map((type, index) => {
+                                return  <option value= {type} color="black">{type}</option>
+                              })
                             }
+                            </Select>
+                        </Box>
+                        {analysisName === "monte carlo" && (
+                          <Box mt={4}>
+                            <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold">
+                              Select Iterations:
+                            </Text>
+                            <Input
+                              type="number"
+                              value={mcIterations}
+                              onChange={(e) => setMcIterations(parseInt(e.target.value) || 1)}
+                              min={1}
+                              max={10000} // optional upper limit
+                              backgroundColor="white"
+                            />
+                          </Box>
+                        )}
+                        <Box>
+                            <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold" > Select scenario:</Text>
+                            <Select value={scenarioName} placeholder = 'choose scenario' width = '100%' {...(!scenarioName && {color: "gray"})} backgroundColor= 'white' icon={<FiChevronDown />} onChange={evt => setScenarioName(evt.target.value)}>
+                            {
+                              getData().getAllScenarios().map((scenario, index) => {
+                                return  <option value= {scenario.scenarioName} color="black">{scenario.scenarioName}</option>
+                              })
+                            }
+                            </Select>
+                        </Box>
+                        <Box>
+                            <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold" > Select simulator:</Text>
+                            <Select value={simulator} placeholder = 'choose simulator' width = '100%'  {...(!simulator && {color: "gray"})}  backgroundColor= 'white' icon={<FiChevronDown />} onChange={evt => setSimulator(evt.target.value)}>
+                                <option value='Scylla' color="black">Scylla</option>
+                            </Select>
+                        </Box>
+                        
+                        {!started&& 
+                        <Button variant="outline" bg="#FFFF" onClick={start} disabled={!scenarioName || !simulator}>
+                            <Text color="RGBA(0, 0, 0, 0.64)" fontWeight="bold">Start Simulation</Text>
+                        </Button>}
 
-                    </Flex>
-                </CardBody>
-            </Card>
+                        {started&& 
+                        <Button variant="outline" bg="#FFFF" onClick={abort}>
+                            <Text color="RGBA(0, 0, 0, 0.64)" fontWeight="bold">Abort Simulation</Text>
+                        </Button>
+                        }
 
-            
+                </Flex>
+            </CardBody>
+        </Card>
+
+            <RunProgressIndicationBar {...{started, finished, errored}}/>
             <ToolRunOutputCard {...{projectName, response, toolName : 'Simulator', processName : 'simulation', filePrefix : response.requestId}}/>
             
         
