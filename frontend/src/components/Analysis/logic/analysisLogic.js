@@ -34,15 +34,17 @@ function mapToDist(driver, r) {
       // console.log("normal dist for", driver.name, dist, cost);
       // Use inverse transform sampling (approximation)
       // Simplified: convert u to standard normal (z-score)
-      const z = Math.sqrt(-2 * Math.log(r)) * Math.cos(2 * Math.PI * r);
+      const EPS = 1e-12; // small number to avoid log(0)
+      const safeR = Math.max(r, EPS);
+      const z = Math.sqrt(-2 * Math.log(safeR)) * Math.cos(2 * Math.PI * safeR);
       return cost.mean + z * cost.stdDev;
     }
     case "triangular": {
-        const { min, mode, max } = cost;
-        const c = (mode - min) / (max - min);
-        return r < c
-            ? min + Math.sqrt(r * (max - min) * (mode - min))
-            : max - Math.sqrt((1 - r) * (max - min) * (max - mode));
+      const { min, mode, max } = cost;
+      const c = (mode - min) / (max - min);
+      return r < c
+        ? min + Math.sqrt(r * (max - min) * (mode - min))
+        : max - Math.sqrt((1 - r) * (max - min) * (max - mode));
     }
     case "uniform":
       return cost.min + r * (cost.max - cost.min);
@@ -107,7 +109,11 @@ function createSampleMatrix(iterations, driverCount) {
   for (let i = 0; i < driverCount; i++) {
     const row = [];
     for (let j = 0; j < iterations; j++) {
-      row.push(Math.random().toFixed(2));  // todo: remove rounding to 2 decimal
+      const r = Math.random();
+      // Clamp away 0 to avoid log(0) issues:
+      const safeR = Math.min(1 - 1e-12, Math.max(1e-12, r));
+      row.push(safeR);
+
     }
     matrix.push(row);
   }
@@ -139,7 +145,11 @@ function mapSampleMatrixToDistributions(sampleMatrix, drivers) {
     // c#onst driverName = Object.keys(driversByName)[driverIndex];
     const driver = drivers[driverIndex];
 
-    return row.map(rawSample => mapToDist(driver, rawSample));
+    return row.map(rawSample => {
+      let r = mapToDist(driver, rawSample)
+        ; if (r === Infinity) console.log("r is inf for", driver, rawSample);
+      return r;
+    });
   });
 }
 
@@ -173,7 +183,7 @@ function mapSampleMatrixToDistributions(sampleMatrix, drivers) {
 const runSimpleMonteCarloSimulation = async ({
   MC_ITERATIONS,
   scenarioData,
-  simulator, 
+  simulator,
   stateReports
 }) => {
   // console.log("[runSimpleMonteCarloSimulation] called with scenarioData", scenarioData, "and mc iterations", MC_ITERATIONS);
@@ -182,13 +192,14 @@ const runSimpleMonteCarloSimulation = async ({
   // const drivers =  getCostDriversByName(abstractCostDrivers) 
   const drivers = getConcreteCostDriverArray(abstractCostDrivers)
   // console.log("[runSimpleMonteCarloSimulation] drivers", drivers);
-  const driverCount =drivers.length;
-  console.log("[runSimpleMonteCarloSimulation] called", MC_ITERATIONS, " terations, with", driverCount ,"concrete drivers:", drivers );
+  const driverCount = drivers.length;
+  console.log("[runSimpleMonteCarloSimulation] called", MC_ITERATIONS, " terations, with", driverCount, "concrete drivers:", drivers);
 
-  
+
   const sampleRandMatrix = createSampleMatrix(MC_ITERATIONS, driverCount)
-  // printMatrix(sampleRandMatrix)
 
+  // printMatrix(sampleRandMatrix)
+  console.log("[runSimpleMonteCarloSimulation] rand sampleMatrix", sampleRandMatrix);
   printMatrix(sampleRandMatrix)
   const sampleMatrix = mapSampleMatrixToDistributions(sampleRandMatrix, drivers);
   console.log("[runSimpleMonteCarloSimulation] sampleMatrix", sampleMatrix);
@@ -206,7 +217,7 @@ const runSimpleMonteCarloSimulation = async ({
   return results
 }
 
-const monteCarlo_matrix = async ({
+const monteCarlo_matrixASYNC = async ({
   sampleMatrix, // [driver][iteration]
   drivers,
   simulator,
@@ -219,7 +230,7 @@ const monteCarlo_matrix = async ({
 
   // console.log("[monteCarlo_matrix] called with", MC_ITERATIONS, "iterations and", driverCount, "drivers", drivers)
   for (let i = 0; i < MC_ITERATIONS; i++) {
-    // Deep copy Driver to avoid mutating input
+
     const sampledDrivers = JSON.parse(JSON.stringify(drivers));
     // console.log("[monteCarlo_matrix] sampledDriver copy", sampledDrivers)
 
@@ -230,8 +241,8 @@ const monteCarlo_matrix = async ({
 
     // console.log("[monteCarlo_matrix] call simulator; round", i, "with", sampledDrivers);
     const abstractCostDrivers = mapAbstractDriversFromConcrete(sampledDrivers);
-    
-    const progress = (i+1)/(MC_ITERATIONS+1) * 100 - 1;
+
+    const progress = (i + 1) / (MC_ITERATIONS + 1) * 100 - 1;
     console.log("[monteCarlo_matrix ] Abstract sampledDrivers", sampledDrivers, progress);
     try {
       stateReports.setStarted(progress);
@@ -240,10 +251,10 @@ const monteCarlo_matrix = async ({
     }
     // stateReports.setStarted(progress);
 
-    console.log("[monteCarlo_matrix] call simulator; ", i+1, "of", MC_ITERATIONS, "with", abstractCostDrivers);
-    const result = await simulator(abstractCostDrivers, i+1);
+    console.log("[monteCarlo_matrix] call simulator; ", i + 1, "of", MC_ITERATIONS, "with", abstractCostDrivers);
+    const result = await simulator(abstractCostDrivers, i + 1);
     if (result) {
-      console.log("[monteCarlo_matrix] result", result);
+      console.log("[monteCarlo_matrix] !!!!!! result of", i, "with", result);
       result.sampleIndex = i;
       result.sampledConfig = sampledDrivers;
       simulationResults.push(result);
@@ -253,6 +264,74 @@ const monteCarlo_matrix = async ({
   console.log("[monteCarlo_matrix] simulationResults", simulationResults)
   return simulationResults;
 };
+
+const monteCarlo_matrix = async ({
+  sampleMatrix, // [driver][iteration]
+  drivers,
+  simulator,
+  stateReports
+}) => {
+  console.log("[monteCarlo_matrix] called with drivers", drivers);
+  const MC_ITERATIONS = sampleMatrix[0].length;
+  const driverCount = sampleMatrix.length;
+
+  let completed = 0; // track finished simulations
+  const simulationPromises = [];
+
+  for (let i = 0; i < MC_ITERATIONS; i++) {
+    const sampledDrivers = JSON.parse(JSON.stringify(drivers));
+    for (let d = 0; d < driverCount; d++) {
+      sampledDrivers[d].cost = sampleMatrix[d][i];
+    }
+
+    const abstractCostDrivers = mapAbstractDriversFromConcrete(sampledDrivers);
+
+    const simPromise = simulator(abstractCostDrivers, i + 1)
+      .then(result => {
+        completed++;
+
+        // Update progress when this simulation finishes
+        const progress = (completed / MC_ITERATIONS) * 100;
+        try {
+          stateReports.setStarted(progress);
+        } catch (error) {
+          console.log("[monteCarlo_matrix] progress update error", error);
+        }
+
+        if (result) {
+          if (result.error) {
+            console.log("[monteCarlo_matrix] simulator error at", i, result.error, sampledDrivers, sampleMatrix);
+          }
+          console.log("[monteCarlo_matrix] !!!!!! result of", i, "with", result);
+          result.sampleIndex = i;
+          result.sampledConfig = sampledDrivers;
+          return result;
+        }
+        return null;
+      })
+      .catch(err => {
+        completed++;
+        const progress = (completed / MC_ITERATIONS) * 100;
+        try {
+          stateReports.setStarted(progress);
+        } catch (error) {
+          console.log("[monteCarlo_matrix] progress update error", error);
+        }
+
+        console.log("[monteCarlo_matrix] simulator error at", i, err, sampledDrivers);
+        return { error: err, sampleIndex: i };
+      });
+
+    simulationPromises.push(simPromise);
+  }
+
+  // Wait for all simulations to complete
+  const simulationResults = await Promise.all(simulationPromises);
+
+  console.log("[monteCarlo_matrix] simulationResults", simulationResults);
+  return simulationResults.filter(Boolean); // filter out failed/null runs
+};
+
 
 
 /**
@@ -264,13 +343,13 @@ const monteCarlo_matrix = async ({
 function localSensAnalysis(simulator, drivers, iterations) {
   // todo: loop through all drivers and simulate them oat
   const driverCount = drivers.length;
-  for(let d = 0; d < driverCount; d++) {
+  for (let d = 0; d < driverCount; d++) {
     const driver = drivers[d];
     const samples = createSampleMatrix(iterations, driverCount);
     // todo: loop through all samples and simulate them
   }
 
-  
+
 }
 
 
@@ -388,5 +467,6 @@ function displayOutputs() {
 
 
 export {
-  runSimpleMonteCarloSimulation, 
-  localSensAnalysis}
+  runSimpleMonteCarloSimulation,
+  localSensAnalysis
+}

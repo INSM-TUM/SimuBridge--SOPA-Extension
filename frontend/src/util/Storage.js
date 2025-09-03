@@ -123,6 +123,13 @@ export async function downloadFile(projectName, fileName, encoding='charset=UTF-
     const data = (await getFile(projectName, fileName)).data;
     return downloadData(data, fileName, encoding);
 }
+// helper function to not immediatly download files
+export async function fetchFileBlob(projectName, filePath) {
+    const url = `/api/storage/${projectName}/${filePath}`;
+    const response = await fetch(url);
+    return await response.blob(); // just return the Blob, no download
+}
+
 
 export function downloadData(data, fileName, encoding='charset=UTF-8') {
     const encodedData = encodeURIComponent(data);

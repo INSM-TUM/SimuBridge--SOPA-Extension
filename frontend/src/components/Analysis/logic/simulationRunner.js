@@ -33,13 +33,14 @@ export const runMultipleSimulations = async ({
 
       const simulator = createSimulator(scenarioData, scenarioName, stateReports, source, projectName);
       let simulationResults = [];
+      simulationResults.analysisName = analysisName;
+      const startTime = Date.now();
 
       switch(analysisName)
       {
         case "monte carlo":
           console.log("runSimpleMonteCarloSimulation with scenarioData", scenarioData, "and mc iterations", MC_ITERATIONS);
           simulationResults = await runSimpleMonteCarloSimulation({MC_ITERATIONS, scenarioData, simulator, stateReports});
-          simulationResults.finished = new Date().getTime();
           console.log("simulation Run completed");
           break;
         case "local SA":
@@ -50,13 +51,17 @@ export const runMultipleSimulations = async ({
           break;
       }
 
+      const endTime = Date.now();
+      simulationResults.finished = endTime;
+      simulationResults.durationMs = endTime - startTime; // duration [milliseconds]
+
       
       stateReports.setStarted(false);
       stateReports.setFinished(true);
     
-      stateReports.toasting("success", "Monte Carlo Simulation", `Completed ${MC_ITERATIONS} simulations`);
+      stateReports.toasting("success", "Monte Carlo Simulation", `Completed ${MC_ITERATIONS} simulations in ${simulationResults.durationMs} ms`);
       console.log("Simulation Results:", simulationResults);
-      sessionStorage.setItem(projectName + '/monteCarloResults', JSON.stringify(simulationResults));
+      sessionStorage.setItem(projectName + '/analysisResults', JSON.stringify(simulationResults));
       stateReports.setResponse(simulationResults);
       // stateReports.setResponse(responseObject);
 
@@ -107,10 +112,10 @@ export const runMultipleSimulations = async ({
   };
 }
 
-const replaceScenarioDrivers = (drivers, scenarioData) => {
-  scenarioData.environmentImpactParameters.costDrivers = drivers;
-  return scenarioData;
-}
+// const replaceScenarioDrivers = (drivers, scenarioData) => {
+//   scenarioData.environmentImpactParameters.costDrivers = drivers;
+//   return scenarioData;
+// }
 
   // function to start the simulation
   const simulate = async (globalConfig, simConfig, scenarioName, processModel, bpmn, stateReports, source, projectName) => {
@@ -182,8 +187,8 @@ const replaceScenarioDrivers = (drivers, scenarioData) => {
 
 
   
-  const getGlobalConfigSample = async (iteration, globalConfig) => {
-    // todo: This function should return a sample of the global configuration for the given iteration
-    // For now, we will just return the globalConfig as is
-    return globalConfig;
-  };
+  // const getGlobalConfigSample = async (iteration, globalConfig) => {
+  //   // todo: This function should return a sample of the global configuration for the given iteration
+  //   // For now, we will just return the globalConfig as is
+  //   return globalConfig;
+  // };

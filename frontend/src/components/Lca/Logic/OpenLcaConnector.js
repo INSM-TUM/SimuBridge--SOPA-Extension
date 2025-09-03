@@ -120,12 +120,12 @@ export const calculateCostDriver = async (apiUrl, impactMethod, calculationType,
                 mode: mode
             }
 
-            if(stdDev < EPSILON) {
-                mcEval.distType = "deterministic";
-            }else{
-                const distributions = fitDistributions(results);
-                console.log("Fitted distributions:", distributions);
-            }
+            // if(stdDev < EPSILON) {
+            //     mcEval.distType = "deterministic";
+            // }else{
+            //     const distributions = fitDistributions(results);
+            //     console.log("Fitted distributions:", distributions);
+            // }
 
 
             // console.log('Monte Carlo Evaluation:', mcEval);
@@ -190,7 +190,7 @@ async function monteCarloJs(apiUrl, targetDriver, impactMethod, normalizationSet
     // Dispose of the simulator to release resources
     await simulator.dispose();
     
-    console.log("[mc] ctdriver name:", xs);
+    // console.log("[mc] ctdriver name:", xs);
     // if (targetDriver.name === "a_concrete_b") {
     //     replacement_impactCathegory = "f3138c2e-ea9c-305a-adf6-65e692e5b761"
     //     xs = transposeArray(xs)

@@ -1,43 +1,60 @@
-import { Box, Text, Select, Flex, Button, Input, Grid } from "@chakra-ui/react";
+import { Text, Select, Flex, Button, Input, Grid} from "@chakra-ui/react";
 import { useState } from "react";
 import { DistributionTypes } from "simulation-bridge-datamodel/SimulationModelDescriptor";
 
 const distTypeOptions = ["uniform", "triangular", "normal", "deterministic", "lognormal"];
 
-const DriverEditTab = ({ concreteCostDriver, cType, onUpdate }) => {
+const DriverEditTab = ({ concreteCostDriver, onUpdate }) => {
     const [isEditing, setIsEditing] = useState(false);
-    const [editedDriver, setEditedDriver] = useState({ ...concreteCostDriver });
-    //   console.log("DriverEditTab", concreteCostDriver, editedDriver);
+     const [editedDriver, setEditedDriver] = useState({ ...concreteCostDriver });
+    // console.log("DriverEditTab edClone", concreteCostDriver, editedDriver);
 
     const handleChange = (field, value) => {
-        if (field === "distType") {
-            setEditedDriver({
-                ...editedDriver,
-                distType: value,
-                cost: { ...editedDriver.cost }, // reset cost when distType changes
-            });
-        } else {
-            let parsedValue = value;
-            if (field === "stdDev" && typeof value === "string" && value.endsWith("%")){ // check if value is stdDev as a percentage
-           
+        setEditedDriver(prev => {
+
+            const updatedCost = { ...prev.cost };
+            console.log("DriverEditTab handleChange", updatedCost);
+            if (field === "distType") {
+                // Update distType only, keep cost intact
+                return {
+                    ...prev,
+                    distType: value,
+                };
+            }
+
+            // Parse input (allow commas for decimals)
+            let parsedValue = parseFloat(value.replace(",", "."));
+
+            // Handle percentage inputs
+            if (typeof value === "string" && value.endsWith("%")) {
                 const percent = parseFloat(value);
-                const mean = parseFloat(editedDriver.cost.mean || 0);
-                if (!isNaN(percent) && !isNaN(mean)) {
-                    parsedValue = (mean * percent) / 100;
+
+                if (field === "stdDev") {
+                    const mean = parseFloat(prev.cost.mean || 0);
+                    if (!isNaN(percent) && !isNaN(mean)) {
+                        parsedValue = (mean * percent) / 100;
+                    }
+                } else if (field === "max") {
+                    const mode = parseFloat(prev.cost.mode || 0);
+                    if (!isNaN(percent) && !isNaN(mode)) {
+                        parsedValue = mode + (mode * percent) / 100;
+                    }
+                } else if (field === "min") {
+                    const mode = parseFloat(prev.cost.mode || 0);
+                    if (!isNaN(percent) && !isNaN(mode)) {
+                        parsedValue = mode - (mode * percent) / 100;
+                    }
                 }
             }
 
-            setEditedDriver({
-                ...editedDriver,
-                cost: {
-                    ...editedDriver.cost,
-                    [field]: parsedValue,
-                },
-            });
+            // Apply the updated cost
+            updatedCost[field] = parsedValue;
 
-        }
-            
-        
+            return {
+                ...prev,
+                cost: updatedCost,
+            };
+        });
     };
 
 
@@ -54,24 +71,24 @@ const DriverEditTab = ({ concreteCostDriver, cType, onUpdate }) => {
                         size="sm"
                         width="80px"
                     />
-                    ) : (
+                ) : (
                     (() => {
                         const [formatted, exp] = formatNumber(cost[field]);
                         return (
-                        <Text width="80px" fontSize="sm">
-                            {formatted}
-                            {exp !== "0" && exp !== "+0" && (
-                            <Text as="sup" fontWeight="bold">
-                                {parseInt(exp, 10)}
+                            <Text width="80px" fontSize="sm">
+                                {formatted}
+                                {exp !== "0" && exp !== "+0" && (
+                                    <Text as="sup" fontWeight="bold">
+                                        {parseInt(exp, 10)}
+                                    </Text>
+                                )}
                             </Text>
-                            )}
-                        </Text>
                         );
                     })()
-                    )}
+                )}
             </Flex>
         );
-
+    // console.log("DriverEditTab renderCostInputs", distType, cost);
         // Render cost parameters based on distType
         switch (distType) {
             case "deterministic":
@@ -82,11 +99,11 @@ const DriverEditTab = ({ concreteCostDriver, cType, onUpdate }) => {
                 );
             case "uniform":
                 return (
-                        <Flex gap={4}>
+                    <Flex gap={4}>
                         {labeledInput("Min", "min")}
                         {labeledInput("Max", "max")}
-                        </Flex>
-                    );
+                    </Flex>
+                );
             case "triangular":
                 return (
                     <Flex gap={4}>
@@ -94,17 +111,17 @@ const DriverEditTab = ({ concreteCostDriver, cType, onUpdate }) => {
                         {labeledInput("Max", "max")}
                         {labeledInput("Mode", "mode")}
                     </Flex>
-                    
+
                 );
             case "normal":
                 return (
                     <Flex gap={4}>
-                       
+
                         {labeledInput("Mean", "mean")}
                         {labeledInput("StdDev", "stdDev")}
 
                     </Flex>
-                    
+
                 );
             default:
                 return null;
@@ -133,15 +150,15 @@ const DriverEditTab = ({ concreteCostDriver, cType, onUpdate }) => {
                 icon={isEditing ? undefined : <></>}
             >
                 {distTypeOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                    {opt}
-                </option>
+                    <option key={opt} value={opt}>
+                        {opt}
+                    </option>
                 ))}
             </Select>
-            
+
 
             <Flex gap={2}>{renderCostInputs()}</Flex>
-             <Flex gap={1}>
+            <Flex gap={1}>
                 {!isEditing ? (
                     <Button size="sm" onClick={() => setIsEditing(true)}>
                         Edit
@@ -170,17 +187,17 @@ const DriverEditTab = ({ concreteCostDriver, cType, onUpdate }) => {
  * @returns exponent
  */
 function formatNumber(number) { /// todo this function is used in multiple places, should be moved to a util file
-  if (typeof number !== "number") return ["-", "-"];
-  // console.log("formatNumber called with:", number);
-  if (number === 0) return ["0", "0"];
-  let [coefficient, exponent] = number.toExponential(2).split('e');
-  let formattedNumber;
-  if (exponent === "0" || exponent === "+0" || exponent === "-0") {
-    formattedNumber = coefficient;
-  } else
-    formattedNumber = `${coefficient} × 10`;
-  // console.log("number:", number, "Exponent:", exponent, typeof exponent);
-  return [formattedNumber, exponent];
+    if (typeof number !== "number") return ["-", "-"];
+    // console.log("formatNumber called with:", number);
+    if (number === 0) return ["0", "0"];
+    let [coefficient, exponent] = number.toExponential(2).split('e');
+    let formattedNumber;
+    if (exponent === "0" || exponent === "+0" || exponent === "-0") {
+        formattedNumber = coefficient;
+    } else
+        formattedNumber = `${coefficient} × 10`;
+    // console.log("number:", number, "Exponent:", exponent, typeof exponent);
+    return [formattedNumber, exponent];
 }
 
 export default DriverEditTab;
