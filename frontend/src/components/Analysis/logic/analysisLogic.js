@@ -1,5 +1,5 @@
 
-import {mapAbstractDriversFromConcrete} from './../../Lca/Logic/LcaDataManager';
+import { mapAbstractDriversFromConcrete } from './../../Lca/Logic/LcaDataManager';
 
 //#region Helpers
 
@@ -13,8 +13,8 @@ import {mapAbstractDriversFromConcrete} from './../../Lca/Logic/LcaDataManager';
 function mapToDist(driver, r) {
   // console.log("mapToDist", driver, r);
   // Check dist type, return one sample cost
- 
-  const cost = driver.cost; 
+
+  const cost = driver.cost;
   const dist = driver.distType;
   // console.log("mapToDist", driver, dist, cost);  
   if (!dist) {
@@ -31,12 +31,14 @@ function mapToDist(driver, r) {
 
   switch (dist) {
     case "normal": {
-      // console.log("normal dist for", driver.name, dist, cost);
-      // Use inverse transform sampling (approximation)
-      // Simplified: convert u to standard normal (z-score)
-      const EPS = 1e-12; // small number to avoid log(0)
-      const safeR = Math.max(r, EPS);
-      const z = Math.sqrt(-2 * Math.log(safeR)) * Math.cos(2 * Math.PI * safeR);
+      // Ensure the input is strictly within (0,1) to avoid edge issues
+      const EPS = 1e-12;
+      const safeR = Math.min(1 - EPS, Math.max(EPS, r));
+
+      // Use the provided inverse CDF function to get standard normal
+      const z = NormSInv(safeR);
+
+      // Scale by mean and standard deviation
       return cost.mean + z * cost.stdDev;
     }
     case "triangular": {
@@ -81,14 +83,48 @@ function getConcreteCostDriverArray(abstractCostDrivers) {
     if (!abstractDriver.concreteCostDrivers) continue;
     // console.log("!!!!!!!!!!!!!abstractDriver:", abstractDriver);
     for (const concrete of abstractDriver.concreteCostDrivers) {
-      
+
       drivers.push({
         ...concrete,
-        category: abstractDriver.name
+        category: abstractDriver.id
       });
     }
   }
   return drivers;
+}
+
+
+function NormSInv(p) {
+  var a1 = -39.6968302866538, a2 = 220.946098424521, a3 = -275.928510446969;
+  var a4 = 138.357751867269, a5 = -30.6647980661472, a6 = 2.50662827745924;
+  var b1 = -54.4760987982241, b2 = 161.585836858041, b3 = -155.698979859887;
+  var b4 = 66.8013118877197, b5 = -13.2806815528857, c1 = -7.78489400243029E-03;
+  var c2 = -0.322396458041136, c3 = -2.40075827716184, c4 = -2.54973253934373;
+  var c5 = 4.37466414146497, c6 = 2.93816398269878, d1 = 7.78469570904146E-03;
+  var d2 = 0.32246712907004, d3 = 2.445134137143, d4 = 3.75440866190742;
+  var p_low = 0.02425, p_high = 1 - p_low;
+  var q, r;
+  var retVal;
+
+  if ((p < 0) || (p > 1)) {
+    alert("NormSInv: Argument out of range.");
+    retVal = 0;
+  }
+  else if (p < p_low) {
+    q = Math.sqrt(-2 * Math.log(p));
+    retVal = (((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) / ((((d1 * q + d2) * q + d3) * q + d4) * q + 1);
+  }
+  else if (p <= p_high) {
+    q = p - 0.5;
+    r = q * q;
+    retVal = (((((a1 * r + a2) * r + a3) * r + a4) * r + a5) * r + a6) * q / (((((b1 * r + b2) * r + b3) * r + b4) * r + b5) * r + 1);
+  }
+  else {
+    q = Math.sqrt(-2 * Math.log(1 - p));
+    retVal = -(((((c1 * q + c2) * q + c3) * q + c4) * q + c5) * q + c6) / ((((d1 * q + d2) * q + d3) * q + d4) * q + 1);
+  }
+
+  return retVal;
 }
 
 
@@ -166,7 +202,7 @@ function mapSampleMatrixToDistributions(sampleMatrix, drivers) {
 // }) => {
 //   const simulationResults = [];
 //   for (let i = 0; i < MC_ITERATIONS; i++) {
-    
+
 //     const sampledDriver  = await getDriverSample(i, Driver);  // todo getDriverSample = get rand for every driver
 //     // const result = await simulate(sampledDriver, simConfig, scenarioName, processModel, bpmn, stateReports, source, projectName);
 //     const result = await simulator(sampledDriver);
@@ -191,7 +227,7 @@ const runSimpleMonteCarloSimulation = async ({
   console.log("[runSimpleMonteCarloSimulation] abstract divers", abstractCostDrivers);
   // const drivers =  getCostDriversByName(abstractCostDrivers) 
   const drivers = getConcreteCostDriverArray(abstractCostDrivers)
-  // console.log("[runSimpleMonteCarloSimulation] drivers", drivers);
+  console.log("[runSimpleMonteCarloSimulation] drivers", drivers);
   const driverCount = drivers.length;
   console.log("[runSimpleMonteCarloSimulation] called", MC_ITERATIONS, " terations, with", driverCount, "concrete drivers:", drivers);
 
@@ -228,7 +264,7 @@ const monteCarlo_matrixASYNC = async ({
   const driverCount = sampleMatrix.length;
   const simulationResults = [];
 
-  // console.log("[monteCarlo_matrix] called with", MC_ITERATIONS, "iterations and", driverCount, "drivers", drivers)
+  console.log("[monteCarlo_matrix] called with", MC_ITERATIONS, "iterations and", driverCount, "drivers", drivers)
   for (let i = 0; i < MC_ITERATIONS; i++) {
 
     const sampledDrivers = JSON.parse(JSON.stringify(drivers));
@@ -254,7 +290,7 @@ const monteCarlo_matrixASYNC = async ({
     console.log("[monteCarlo_matrix] call simulator; ", i + 1, "of", MC_ITERATIONS, "with", abstractCostDrivers);
     const result = await simulator(abstractCostDrivers, i + 1);
     if (result) {
-      console.log("[monteCarlo_matrix] !!!!!! result of", i, "with", result);
+      // console.log("[monteCarlo_matrix] !!!!!! result of", i, "with", result);
       result.sampleIndex = i;
       result.sampledConfig = sampledDrivers;
       simulationResults.push(result);
@@ -302,7 +338,7 @@ const monteCarlo_matrix = async ({
           if (result.error) {
             console.log("[monteCarlo_matrix] simulator error at", i, result.error, sampledDrivers, sampleMatrix);
           }
-          console.log("[monteCarlo_matrix] !!!!!! result of", i, "with", result);
+          // console.log("[monteCarlo_matrix] !!!!!! result of", i, "with", result);
           result.sampleIndex = i;
           result.sampledConfig = sampledDrivers;
           return result;
@@ -378,7 +414,7 @@ function mapMatrixToDistribution(A, costDriversById) {
       return mapToDist(currentDriver, u);
     });
     mappedA.push(row);
-    console.log("mapping ",i )
+    console.log("mapping ", i)
     printMatrix(mappedA)
   }
   console.log("mapping ")
@@ -426,7 +462,7 @@ function SobolGSA(iterations, driverCount, costDriversById) {
   const resultsB = monteCarlo_matrix(matrixB);
 
   const sobolResults = [];
-  for(let i = 0; i < driverCount; i++){
+  for (let i = 0; i < driverCount; i++) {
     const matrixC = createSobolC(matrixA, matrixB, i);
     const resultsC = monteCarlo_matrix(matrixC);
 
@@ -436,7 +472,7 @@ function SobolGSA(iterations, driverCount, costDriversById) {
     });
   }
 
-   return {
+  return {
     resultsA,
     resultsB,
     sobolResults,
@@ -447,7 +483,7 @@ function SobolGSA(iterations, driverCount, costDriversById) {
  * first-order Sobol indices
  * @param {*} simResults 
  */
-function SobolGSA_eval(simResults){
+function SobolGSA_eval(simResults) {
 
 }
 
@@ -468,5 +504,10 @@ function displayOutputs() {
 
 export {
   runSimpleMonteCarloSimulation,
-  localSensAnalysis
+  localSensAnalysis,
+  getConcreteCostDriverArray
 }
+
+
+
+

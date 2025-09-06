@@ -1,22 +1,26 @@
 import { useMemo } from "react";
 import { useEffect, useState } from "react";
 import React from "react";
-import { Flex, Heading, SimpleGrid, Card, CardHeader, CardBody, Text, Select, Stack, Button, Progress, Box, Textarea, UnorderedList, ListItem, Grid, GridItem } from '@chakra-ui/react';
+import { Flex, Heading, SimpleGrid, Card, CardHeader, CardBody, Text, Select, Stack, Button, Progress, Box, Textarea, UnorderedList, ListItem, Grid, Divider } from '@chakra-ui/react';
 // import { BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ResponsiveContainer } from "recharts";
-import { getFiles, getFile } from "../../../util/Storage";
-import { HistogramCard } from "./HistogramCard";
+import { getFiles, getFile } from "../../../util/Storage.js";
+import { AnalysisResultDiagrams } from "./AnalysisResultDiagrams.jsx";
 
 
 // XML Parser vorbereiten
 const parser = new DOMParser();
 
 const testCosts = [1.2, 2.3, 2.5, 3.1, 2.9, 4.0, 3.5, 2.8, 3.3, 4.1, 5.0, 3.8, 4.5, 2.7, 3.9];
-const testStats = { mean: 3.2, min: 1.2, max: 5.0, stdev: 1.1, variance: 1.21 };
-
+const testStats = stats(testCosts);
 
 // response: array of Monte Carlo run results
-export default function OutputDiagrams({ runs, projectName }) {
-    // console.log("[Output Diagramms] Runs ", runs, projectName, analysisType);
+export default function AnalysisResultCard({ response, projectName }) {
+    const runs = response.runs || [];
+    // const runsX = Array.isArray(runs) ? runs : runs ? [runs] : [];
+    console.log("[AnalysisResultCard] parra", projectName, response, runs);
+    // console.log("AnalysisResultCard runsX:", runsX);
+
+    console.log("[Output Diagramms] Runs ", runs, projectName);
     const [allRuns, setAllRuns] = useState([]);
     const [deterministic, setDeterministic] = useState([]);
     const [nonDeterministic, setNonDeterministic] = useState([]);
@@ -35,7 +39,7 @@ export default function OutputDiagrams({ runs, projectName }) {
                     costs: runCosts
                 });
             }
-            // console.log("[Output Diagramms] All Runs ", allRuns);
+            console.log("[Output Diagramms] All Runs ", allRuns);
             const perActivityCosts = aggregateCosts(allRuns);
             console.log("[Output Diagramms] Per Activity Costs ", perActivityCosts);
             const activityStats = Object.fromEntries(Object.entries(perActivityCosts).map(([activity, values]) => [activity, stats(values)]))
@@ -68,10 +72,10 @@ export default function OutputDiagrams({ runs, projectName }) {
     return (
         <Card bg="white">
             <CardHeader>
-                <Heading size='md'>Simulation Results ({runs.analysisName})</Heading>
+                <Heading size='md'>Analysis Results ({response.analysisName} {formatDuration(response.durationMs)})</Heading>
             </CardHeader>
             <CardBody>
-                <Flex direction="row" gap={6}>
+                <Flex direction="column" gap={6}>
                     {/* Deterministic Activities Section */}
                     <Box flex={1} sx={{ minWidth: 212 }}>
                         <Text fontWeight="bold">Deterministic Activities</Text>
@@ -94,10 +98,12 @@ export default function OutputDiagrams({ runs, projectName }) {
                         )}
                     </Box>
 
+                    <Divider />
+
                     {/* Distributed  Activity Costs Section */}
                     <Box flex={1}>
                         <Text fontWeight="bold" mb={2}>Non-Deterministic Activities</Text>
-                        <HistogramCard activity={"testA"} costs={testCosts} stats={testStats} />
+                        <AnalysisResultDiagrams activity={"testA"} costs={testCosts} stats={testStats} />
 
                         {nonDeterministic.length > 0 ? (
                             <SimpleGrid
@@ -105,7 +111,7 @@ export default function OutputDiagrams({ runs, projectName }) {
                                 spacing={4}
                             >
                                 {nonDeterministic.map(({ name, stats, costs }) => (
-                                    <HistogramCard key={name} activity={name} costs={costs} stats={stats} />
+                                    <AnalysisResultDiagrams key={name} activity={name} costs={costs} stats={stats} />
                                 ))}
                             </SimpleGrid>
                         ) : (
@@ -137,8 +143,9 @@ export default function OutputDiagrams({ runs, projectName }) {
 
 
 async function extractActivityCosts(run, projectName) {
-
+    // console.log("Extracting activity costs from run:", run, projectName);
     const statFileName = run.files.find((f) => f.endsWith("_statistic.xml"));
+    // console.log("Statistic file name:", statFileName);
     if (!statFileName) return {};
     const filePath = (run.requestId ? run.requestId + "/" : "") + statFileName;
 
@@ -205,4 +212,16 @@ function stats(arr) {
     const stdev = Math.sqrt(variance);
 
     return { count: n, mean, variance, stdev, min, max, deterministic };
+}
+
+function formatDuration(durationMs, includeFractional = false) {
+    const totalSeconds = durationMs / 1000;
+    console.log("formatDuration", durationMs, totalSeconds);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = includeFractional
+        ? (totalSeconds % 60).toFixed(2)
+        : Math.floor(totalSeconds % 60);
+
+    if (minutes === 0) return `${seconds} sec`;
+    else return `${minutes} min ${seconds} sec`;
 }

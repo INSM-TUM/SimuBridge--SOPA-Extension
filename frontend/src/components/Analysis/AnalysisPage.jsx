@@ -7,11 +7,13 @@ import { convertScenario } from "simulation-bridge-converter-scylla/ConvertScena
 import RunProgressIndicationBar from "../RunProgressIndicationBar";
 import ToolRunOutputCard from "../ToolRunOutputCard";
 import DriverEditTab from "./components/DriverEditTab";
-import CostCharts from "./components/OutputDiagrams";
+import CostCharts from "./components/AnalysisResultCard";
 
 import { runMultipleSimulations } from './logic/simulationRunner';
-import OutputDiagrams from "./components/OutputDiagrams";
+import {getConcreteCostDriverArray} from './logic/analysisLogic'
+import AnalysisResultCard from "./components/AnalysisResultCard";
 import { saveAllCostDrivers, mapAbstractDriversFromConcrete } from "../../components/Lca/Logic/LcaDataManager";
+
 
 const AnalysisPage = ({ projectName, getData, toasting }) => {
 
@@ -42,25 +44,30 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
 
   const handleDriverUpdate = (abstractIndex, concreteIndex, updatedDriver) => {
     setSimulationDriverSettings((prevAC) => {
-      // Step 1: update the concrete driver in the right abstract driver
-      const updatedConcreteDrivers = [...prevAC[abstractIndex].concreteCostDrivers];
-      updatedConcreteDrivers[concreteIndex] = updatedDriver;
+      // 1. Copy the full abstract array
+      const newAbstractSettings = structuredClone(simulationDriverSettings);
+      console.log("handleDriverUpdate: prevAC", prevAC, newAbstractSettings);
 
-      // Step 2: rebuild the abstract driver using the helper
-      const rebuiltAbstractDrivers = mapAbstractDriversFromConcrete(updatedConcreteDrivers);
+      // 2. Update the specific concrete driver
+      newAbstractSettings[abstractIndex].concreteCostDrivers[concreteIndex] = updatedDriver;
 
-      // Step 3: replace in the outer array
-      const newAbstractSettings = [...prevAC];
-      newAbstractSettings[abstractIndex] = rebuiltAbstractDrivers[0]; // assuming only 1 category per abstract driver
+      // 3. Flatten ALL concrete drivers from ALL abstracts
+      const allConcreteDrivers = getConcreteCostDriverArray(newAbstractSettings);
+      console.log("handleDriverUpdate: allConcreteDrivers", allConcreteDrivers);
 
-      // Step 4: save (unchanged)
+      // 4. Rebuild ALL abstracts consistently
+      const rebuiltAbstractDrivers = mapAbstractDriversFromConcrete(allConcreteDrivers);
+
+      // 5. Save the new settings
       saveAllCostDrivers(
-        newAbstractSettings,
+        rebuiltAbstractDrivers,
         getData().getCurrentScenario().environmentImpactParameters.calcType,
         getData
       );
 
-      return newAbstractSettings;
+      console.log("handleDriverUpdate: rebuiltAbstractDrivers", rebuiltAbstractDrivers);
+
+      return rebuiltAbstractDrivers;
     });
   };
 
@@ -97,7 +104,7 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
   };
 
   //  function to download the file
-  const download = async (data, fileName, encoding='charset=UTF-8') => {
+  const download = async (data, fileName, encoding = 'charset=UTF-8') => {
     // Fetching the file, creating a blob and a URL
     const encodedData = encodeURIComponent(data);
     const a = document.createElement("a");
@@ -112,13 +119,13 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
 
 
 
-    return (
-        <Box h="93vh" overflowY="auto" p="5" >
-        <Stack gap="2">
+  return (
+    <Box h="93vh" overflowY="auto" p="5" >
+      <Stack gap="2">
         <Heading size='lg' >Sensitivity Analysis</Heading>
 
-        
-        
+
+
         <Card bg="white">
           <CardHeader>
             <Heading size='md'> Environmental Simulation Parameters</Heading>
@@ -217,9 +224,9 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
         </Card>
 
         <RunProgressIndicationBar {...{ started, finished, errored }} />
-        <ToolRunOutputCard {...{ projectName, response, toolName: 'Analysis', processName: 'simulation', filePrefix: response.requestId }} />
-        {response && response.length > 0 &&
-          <OutputDiagrams {... { runs: response, projectName: projectName}} />}
+        <ToolRunOutputCard {...{ projectName, response: response.runs, toolName: 'Analysis', processName: 'simulation', filePrefix: response.requestId }} />
+        {response && response.runs && response.runs.length > 0 &&
+          <AnalysisResultCard {... { response: response, projectName: projectName }} />}
 
 
 

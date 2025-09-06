@@ -40,7 +40,7 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
 
     return <Card bg="white">
         <CardHeader>
-            <Heading size='md'> Last {toolName} Run Output {response.finished && `[${new Date(response.finished).toLocaleString()}]`}</Heading>
+            <Heading size='md'> Last {toolName} Run Output {response && response.finished && `[${new Date(response.finished).toLocaleString()}]`}</Heading>
         </CardHeader>
         <CardBody>
             {runs.length === 0 && (

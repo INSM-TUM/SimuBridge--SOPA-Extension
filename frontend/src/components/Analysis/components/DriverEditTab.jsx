@@ -7,12 +7,15 @@ const distTypeOptions = ["uniform", "triangular", "normal", "deterministic", "lo
 const DriverEditTab = ({ concreteCostDriver, onUpdate }) => {
     const [isEditing, setIsEditing] = useState(false);
      const [editedDriver, setEditedDriver] = useState({ ...concreteCostDriver });
+     const [inputValues, setInputValues] = useState({});
+    
     // console.log("DriverEditTab edClone", concreteCostDriver, editedDriver);
 
     const handleChange = (field, value) => {
         setEditedDriver(prev => {
-
-            const updatedCost = { ...prev.cost };
+            console.log("DriverEditTab handleChange params", value, typeof(value), prev);
+            
+           const updatedCost = { ...prev.cost };
             console.log("DriverEditTab handleChange", updatedCost);
             if (field === "distType") {
                 // Update distType only, keep cost intact
@@ -23,7 +26,7 @@ const DriverEditTab = ({ concreteCostDriver, onUpdate }) => {
             }
 
             // Parse input (allow commas for decimals)
-            let parsedValue = parseFloat(value.replace(",", "."));
+            let parsedValue = parseFloat(value.replace(",", "."));          
 
             // Handle percentage inputs
             if (typeof value === "string" && value.endsWith("%")) {
@@ -46,9 +49,11 @@ const DriverEditTab = ({ concreteCostDriver, onUpdate }) => {
                     }
                 }
             }
+            console.log("onblur: Final parsed value for", field, "is", parsedValue);
 
             // Apply the updated cost
-            updatedCost[field] = parsedValue;
+            updatedCost[field] = parsedValue;  
+            setInputValues(prev => ({ ...prev, [field]: undefined }));
 
             return {
                 ...prev,
@@ -66,8 +71,9 @@ const DriverEditTab = ({ concreteCostDriver, onUpdate }) => {
                 <Text fontSize="sm" minWidth="40px">{label}:</Text>
                 {isEditing ? (
                     <Input
-                        value={cost[field] ?? ""}
-                        onChange={(e) => handleChange(field, e.target.value)}
+                        value={inputValues[field] ?? (cost[field] ?? "")}
+                        onBlur={(e) => handleChange(field, e.target.value)}
+                        onChange={(e) => setInputValues(prev => ({ ...prev, [field]: e.target.value }))}
                         size="sm"
                         width="80px"
                     />
@@ -143,7 +149,7 @@ const DriverEditTab = ({ concreteCostDriver, onUpdate }) => {
 
             <Select
                 value={editedDriver.distType}
-                onChange={(e) => handleChange("distType", e.target.value)}
+               onChange={(e) => handleChange("distType", e.target.value)}
                 size="sm"
                 isReadOnly={!isEditing}
                 pointerEvents={!isEditing ? "none" : "auto"}

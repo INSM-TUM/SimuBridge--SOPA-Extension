@@ -39,7 +39,7 @@ const LcaIntegration = ({ getData, toasting }) => {
 
   const [selectedCalcType, setSelectedCalcType] = useState("lazy");
   const [calcType, setCalcType] = useState("");
-  const [mcIterations, setMcIterations] = useState(10);
+  const [mcIterations, setMcIterations] = useState(500);
 
 
 
