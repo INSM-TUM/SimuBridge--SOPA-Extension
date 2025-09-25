@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import axios from 'axios';
 import { Flex, Heading, Card, CardHeader, CardBody, Text, Select, Stack, Button, Progress, Box, Textarea, UnorderedList, ListItem, Grid, Input } from '@chakra-ui/react';
 import { FiChevronDown } from 'react-icons/fi';
 
@@ -10,7 +11,7 @@ import DriverEditTab from "./components/DriverEditTab";
 import CostCharts from "./components/AnalysisResultCard";
 
 import { runMultipleSimulations } from './logic/simulationRunner';
-import {getConcreteCostDriverArray} from './logic/analysisLogic'
+import { getConcreteCostDriverArray } from './logic/analysisLogic'
 import AnalysisResultCard from "./components/AnalysisResultCard";
 import { saveAllCostDrivers, mapAbstractDriversFromConcrete } from "../../components/Lca/Logic/LcaDataManager";
 
@@ -23,12 +24,13 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
   const [errored, setErrored] = useState(false);
   const [response, setResponse] = useState(JSON.parse(sessionStorage.getItem(projectName + '/analysisResults')) || {});
 
+
   const [scenarioName, setScenarioName] = useState();
   const [simulator, setSimulator] = useState();
   const [simulationDriverSettings, setSimulationDriverSettings] = useState(getData().getCurrentScenario().environmentImpactParameters.costDrivers);
 
   const [analysisName, setAnalysisName] = useState();
-  const [analysisTypes, setAnalysisTypes] = useState(["monte carlo", "local SA", "Sobol GSA"]);
+  const [analysisTypes, setAnalysisTypes] = useState(["deterministic", "monte carlo", "local SA", "sobol GSA"]);
   const [mcIterations, setMcIterations] = useState(5);
 
   // Creating a reference to the source that can be cancelled if needed
@@ -71,15 +73,16 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
     });
   };
 
-  // const MC_ITERATIONS = 5; // Set your number of MC iterations here
+  // const MC_ITERATIONS = 5; // Set number of MC iterations here
   const start = async () => {
     console.log("Iteration", mcIterations);
-    const stateReports = { 'toasting': toasting, 'setResponse': setResponse, 'setStarted': setStarted, 'setFinished': setFinished, 'setErrored': setErrored }
+    const stateReports = { 'toasting': toasting, 'setResponse': setResponse, 'setStarted': setStarted, 'setFinished': setFinished, 'setErrored': setErrored, 'started': started }
     console.log("sim drivers", simulationDriverSettings)
 
     // Overwrite costDrivers in getData with the edited simulationDriverSettings
     const currentScenario = getData().getCurrentScenario();
     currentScenario.environmentImpactParameters.costDrivers = simulationDriverSettings;
+    source.current = axios.CancelToken.source();
 
     await runMultipleSimulations({
       scenarioName,
@@ -87,11 +90,11 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
       getData,
       projectName,
       stateReports,
-      source,
+      cancelToken: source.current.token,
       analysisName
     });
 
-    console.log("[Analyss Page start()] Finished simulations", response);
+    console.log("[Analyss Page start()] Finished simulations", response); //response.runs.length
   }
 
   // Function to abort the simulation
@@ -99,23 +102,23 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
     console.log("abort");
     // Cancelling the source and updating the finished and started states
     source.current.cancel("Simulation was canceled");
-    setStarted(false);
+    setStarted(-1);
     setResponse({ message: "canceled" });
   };
 
   //  function to download the file
-  const download = async (data, fileName, encoding = 'charset=UTF-8') => {
-    // Fetching the file, creating a blob and a URL
-    const encodedData = encodeURIComponent(data);
-    const a = document.createElement("a");
-    // Creating a download link and triggering a click event
-    const fileType = fileName.split('.').pop();
+  // const download = async (data, fileName, encoding = 'charset=UTF-8') => {
+  //   // Fetching the file, creating a blob and a URL
+  //   const encodedData = encodeURIComponent(data);
+  //   const a = document.createElement("a");
+  //   // Creating a download link and triggering a click event
+  //   const fileType = fileName.split('.').pop();
 
-    a.href = 'data:application/' + fileType + ';' + encoding + ',' + encodedData;
-    a.download = fileName;
-    // a.download = `${sessionStorage.getItem("currentProject")}_${name}.${type}`;
-    a.click();
-  };
+  //   a.href = 'data:application/' + fileType + ';' + encoding + ',' + encodedData;
+  //   a.download = fileName;
+  //   // a.download = `${sessionStorage.getItem("currentProject")}_${name}.${type}`;
+  //   a.click();
+  // };
 
 
 
@@ -123,15 +126,12 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
     <Box h="93vh" overflowY="auto" p="5" >
       <Stack gap="2">
         <Heading size='lg' >Sensitivity Analysis</Heading>
-
-
-
         <Card bg="white">
           <CardHeader>
             <Heading size='md'> Environmental Simulation Parameters</Heading>
           </CardHeader>
           <CardBody>
-            <Grid templateColumns="100px 150px 1fr 100px" gap={4} mb={2} width={"60%"}>
+            <Grid templateColumns="220px 150px 1fr 100px" gap={4} mb={2} width={"60%"}>
               {/* Header row */}
               <Text fontWeight="bold">Name</Text>
               <Text fontWeight="bold">Distribution Type</Text>
@@ -176,7 +176,7 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
                   }
                 </Select>
               </Box>
-              {analysisName === "monte carlo" && (
+              {analysisName !== "deterministic" && (
                 <Box mt={4}>
                   <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold">
                     Select Iterations:
@@ -208,26 +208,31 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
                 </Select>
               </Box>
 
-              {!started &&
+              {(started === 0 || started === 100 || started === false || started === -1) ? (
                 <Button variant="outline" bg="#FFFF" onClick={start} disabled={!scenarioName || !simulator}>
                   <Text color="RGBA(0, 0, 0, 0.64)" fontWeight="bold">Start Simulation</Text>
-                </Button>}
+                </Button>) :
 
-              {started &&
-                <Button variant="outline" bg="#FFFF" onClick={abort}>
-                  <Text color="RGBA(0, 0, 0, 0.64)" fontWeight="bold">Abort Simulation</Text>
-                </Button>
-              }
+                (
+                  <Button variant="outline" bg="#FFFF" onClick={abort}>
+                    <Text color="RGBA(0, 0, 0, 0.64)" fontWeight="bold">Abort Simulation</Text>
+                  </Button>
+                )}
+
+              <Text fontSize="s" textAlign="start" > Note:  {JSON.stringify(started)}</Text>
+
 
             </Flex>
           </CardBody>
         </Card>
-
+ {/* #region Header Section */}
         <RunProgressIndicationBar {...{ started, finished, errored }} />
-        <ToolRunOutputCard {...{ projectName, response: response.runs, toolName: 'Analysis', processName: 'simulation', filePrefix: response.requestId }} />
-        {response && response.runs && response.runs.length > 0 &&
-          <AnalysisResultCard {... { response: response, projectName: projectName }} />}
-
+        <ToolRunOutputCard {...{ projectName, response: response.runs, toolName: analysisName, processName: 'simulation', filePrefix: response.requestId, 'setResponse': setResponse, 'setAnalysisName': setAnalysisName, 'durationMs': response.durationMs, toasting }} />
+        {/* <Text fontSize="s" textAlign="start" > Help: {JSON.stringify(response) }</Text> */}
+        {response && response.runs && ((response.runs.length > 0) || response.runs.sobolResults) &&
+          <AnalysisResultCard {... { response: response, projectName: projectName, drivers: getConcreteCostDriverArray(simulationDriverSettings) }} />
+        }
+{/* #endregion */}
 
 
       </Stack>

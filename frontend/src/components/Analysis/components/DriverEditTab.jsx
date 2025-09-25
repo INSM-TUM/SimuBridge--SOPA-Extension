@@ -144,7 +144,7 @@ const DriverEditTab = ({ concreteCostDriver, onUpdate }) => {
     };
 
     return (
-        <Grid templateColumns="100px 150px 1fr 100px" gap={4} mb={2} width={"60%"}>
+        <Grid templateColumns="220px 150px 1fr 100px" gap={4} mb={2} width={"60%"}>
             <Text as="span" fontWeight="semibold" color="var(--chakra-colors-gray-500)">{concreteCostDriver.name}</Text>
 
             <Select

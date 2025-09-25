@@ -43,10 +43,13 @@ function mapToDist(driver, r) {
     }
     case "triangular": {
       const { min, mode, max } = cost;
+      const EPS = 1e-12;
+      const safeR = Math.min(1 - EPS, Math.max(EPS, r));
+
       const c = (mode - min) / (max - min);
-      return r < c
-        ? min + Math.sqrt(r * (max - min) * (mode - min))
-        : max - Math.sqrt((1 - r) * (max - min) * (max - mode));
+      return safeR < c
+        ? min + Math.sqrt(safeR * (max - min) * (mode - min))
+        : max - Math.sqrt((1 - safeR) * (max - min) * (max - mode));
     }
     case "uniform":
       return cost.min + r * (cost.max - cost.min);
@@ -65,6 +68,7 @@ function mapToDist(driver, r) {
  * @returns 
  */
 function getCostDriversByName(abstractCostDrivers) {
+  console.log("[getCostDriversByName] abstractCostDrivers", abstractCostDrivers);
   const map = {};
   for (const abstractDriver of abstractCostDrivers) {
     if (!abstractDriver.concreteCostDrivers) continue;
@@ -77,6 +81,11 @@ function getCostDriversByName(abstractCostDrivers) {
   return map;
 }
 
+/**
+ * Create map of all cost drivers by Id for faster finding
+ * @param {*} costDrivers 
+ * @returns 
+ */
 function getConcreteCostDriverArray(abstractCostDrivers) {
   const drivers = [];
   for (const abstractDriver of abstractCostDrivers) {
@@ -127,6 +136,9 @@ function NormSInv(p) {
   return retVal;
 }
 
+
+
+//#endregion
 
 //#region Matrix functions
 function printMatrix(a) {
@@ -242,79 +254,57 @@ const runSimpleMonteCarloSimulation = async ({
   printMatrix(sampleMatrix)
   console.log("[runSimpleMonteCarloSimulation] drivers", drivers);
 
+  stateReports.setStarted(1);
+  stateReports.started = 1;
+
   const results = await monteCarlo_matrix({
     sampleMatrix,
     drivers,
     simulator,
     stateReports
   });
+  if (results === "aborted") {
+    console.log("[runSimpleMonteCarloSimulation] mc aborted");
+    return "aborted";
+  }
   console.log("[runSimpleMonteCarloSimulation] complete");
 
   return results
 }
 
-const monteCarlo_matrixASYNC = async ({
-  sampleMatrix, // [driver][iteration]
-  drivers,
-  simulator,
-  stateReports
-}) => {
-  console.log("[monteCarlo_matrix] called with drivers", drivers)
-  const MC_ITERATIONS = sampleMatrix[0].length;
-  const driverCount = sampleMatrix.length;
-  const simulationResults = [];
 
-  console.log("[monteCarlo_matrix] called with", MC_ITERATIONS, "iterations and", driverCount, "drivers", drivers)
-  for (let i = 0; i < MC_ITERATIONS; i++) {
-
-    const sampledDrivers = JSON.parse(JSON.stringify(drivers));
-    // console.log("[monteCarlo_matrix] sampledDriver copy", sampledDrivers)
-
-    for (let d = 0; d < driverCount; d++) {
-      // console.log("[monteCarlo_matrix] set driver", drivers[d].name, "to", sampleMatrix[d][i]);
-      sampledDrivers[d].cost = sampleMatrix[d][i];
-    }
-
-    // console.log("[monteCarlo_matrix] call simulator; round", i, "with", sampledDrivers);
-    const abstractCostDrivers = mapAbstractDriversFromConcrete(sampledDrivers);
-
-    const progress = (i + 1) / (MC_ITERATIONS + 1) * 100 - 1;
-    console.log("[monteCarlo_matrix ] Abstract sampledDrivers", sampledDrivers, progress);
-    try {
-      stateReports.setStarted(progress);
-    } catch (error) {
-      console.log("[monteCarlo_matrix] error", error);
-    }
-    // stateReports.setStarted(progress);
-
-    console.log("[monteCarlo_matrix] call simulator; ", i + 1, "of", MC_ITERATIONS, "with", abstractCostDrivers);
-    const result = await simulator(abstractCostDrivers, i + 1);
-    if (result) {
-      // console.log("[monteCarlo_matrix] !!!!!! result of", i, "with", result);
-      result.sampleIndex = i;
-      result.sampledConfig = sampledDrivers;
-      simulationResults.push(result);
-    }
-  }
-
-  console.log("[monteCarlo_matrix] simulationResults", simulationResults)
-  return simulationResults;
-};
-
+/**
+ * Runs a set of Monte Carlo simulations with a given sample matrix and simulator
+ * The sample matrix is a 2D array where each row is a driver and each column is a
+ * sample of that driver. The simulator is a function that takes a set of sampled
+ * drivers and returns a result (which can be null for failed simulations)
+ * This function returns an array of results, where each result is either a
+ * successful simulation result or an object with an 'error' property
+ * @param {array} sampleMatrix - a 2D array of sampled drivers
+ * @param {array} drivers - an array of driver objects
+ * @param {function} simulator - a function that takes a set of sampled drivers and returns a result
+ * @param {object} stateReports - an object with a 'setStarted' method for updating progress
+ * @returns {array} an array of results, where each result is either a successful simulation result or an object with an 'error' property
+ */
 const monteCarlo_matrix = async ({
   sampleMatrix, // [driver][iteration]
   drivers,
   simulator,
-  stateReports
+  stateReports,
+  progress_repeats = 1
 }) => {
-  console.log("[monteCarlo_matrix] called with drivers", drivers);
+  // console.log("[monteCarlo_matrix] called with drivers", drivers, sampleMatrix);
   const MC_ITERATIONS = sampleMatrix[0].length;
   const driverCount = sampleMatrix.length;
 
+  const progressPerSimulation = Math.max(0.001, 100 / (progress_repeats * MC_ITERATIONS));
+  // console.log("[monteCarlo_matrix] progressPerSimulation", progressPerSimulation, progress_repeats, MC_ITERATIONS, stateReports.started, drivers);
   let completed = 0; // track finished simulations
   const simulationPromises = [];
 
   for (let i = 0; i < MC_ITERATIONS; i++) {
+    if (stateReports.started === -1)
+      return "aborted";
     const sampledDrivers = JSON.parse(JSON.stringify(drivers));
     for (let d = 0; d < driverCount; d++) {
       sampledDrivers[d].cost = sampleMatrix[d][i];
@@ -325,11 +315,12 @@ const monteCarlo_matrix = async ({
     const simPromise = simulator(abstractCostDrivers, i + 1)
       .then(result => {
         completed++;
-
         // Update progress when this simulation finishes
         const progress = (completed / MC_ITERATIONS) * 100;
+        console.log("[monteCarlo_matrix] progress", completed, progress, stateReports.started, progressPerSimulation, stateReports.started + progressPerSimulation,);
         try {
-          stateReports.setStarted(progress);
+          stateReports.started = stateReports.started + progressPerSimulation
+          stateReports.setStarted(stateReports.started);
         } catch (error) {
           console.log("[monteCarlo_matrix] progress update error", error);
         }
@@ -349,7 +340,8 @@ const monteCarlo_matrix = async ({
         completed++;
         const progress = (completed / MC_ITERATIONS) * 100;
         try {
-          stateReports.setStarted(progress);
+          stateReports.setStarted(stateReports.started);
+          stateReports.started = stateReports.started + progressPerSimulation
         } catch (error) {
           console.log("[monteCarlo_matrix] progress update error", error);
         }
@@ -364,33 +356,122 @@ const monteCarlo_matrix = async ({
   // Wait for all simulations to complete
   const simulationResults = await Promise.all(simulationPromises);
 
-  console.log("[monteCarlo_matrix] simulationResults", simulationResults);
+  // console.log("[monteCarlo_matrix] simulationResults", simulationResults);
   return simulationResults.filter(Boolean); // filter out failed/null runs
 };
 
 
-
+//#region Sensitivity Analysis
 /**
  * Local sensitivity analysis
  * @param {function} simulator
  * @param {[Object]} drivers
  * @param {int} iterations per driver
  */
-function localSensAnalysis(simulator, drivers, iterations) {
-  // todo: loop through all drivers and simulate them oat
+const localSensAnalysis = async ({
+  MC_ITERATIONS,
+  scenarioData,
+  simulator,
+  stateReports
+}) => {
+
+  const abstractCostDrivers = scenarioData.environmentImpactParameters.costDrivers;
+  const drivers = getConcreteCostDriverArray(abstractCostDrivers)
   const driverCount = drivers.length;
+  const sampleRandMatrix = createSampleMatrix(MC_ITERATIONS, driverCount);
+
+  stateReports.setStarted(1);
+  stateReports.started = 1;
+
+  const allResults = [];
+  const baselineMatrix = drivers.map(d => Array(1).fill(d.cost.mean)); // create baseline matrix with all deterministic
+  console.log("[runLocalSensitivityAnalysis] baselineMatrix", baselineMatrix, drivers);
+  const baselineResults = await monteCarlo_matrix({
+    sampleMatrix: baselineMatrix,
+    drivers,
+    simulator,
+    stateReports,
+    progress_repeats: driverCount + 0.1
+  });
+  console.log("[runLocalSensitivityAnalysis] baselineResults", baselineResults);
+
+  allResults.push({
+    d: -1,
+    driverName: "baseline",
+    baselineResults: baselineResults[0],
+    drivers
+  });
+  stateReports.started = 1;
+  stateReports.setStarted(1);
+
   for (let d = 0; d < driverCount; d++) {
-    const driver = drivers[d];
-    const samples = createSampleMatrix(iterations, driverCount);
-    // todo: loop through all samples and simulate them
+    const currDriver = drivers[d];
+    console.log(`[runLocalSensitivityAnalysis] Analyzing driver ${d}: ${currDriver.name}`);
+
+
+    const sampleMatrix = createSensitivitySampleMatrixMapping(sampleRandMatrix, d, drivers);
+    console.log("[analysisLogic] localSA sampleMatrix", sampleMatrix, drivers);
+    const results = await monteCarlo_matrix({
+      sampleMatrix,
+      drivers,
+      simulator,
+      stateReports,
+      progress_repeats: driverCount + 1,  // to scale progress
+    });
+
+    if (results === "aborted" || stateReports.started === -1) {
+      console.log("[runLocalSensitivityAnalysis] lsa aborted");
+      return "aborted";
+    }
+
+    allResults.push({
+      d,
+      driverName: currDriver.name,
+      results,
+      sampleMatrix
+    });
+    console.log(`[runLocalSensitivityAnalysis] Progress: ${d+1}/${driverCount}`);
+
+
   }
+  console.log("[runLocalSensitivityAnalysis] complete");
+  return allResults;
 
 
 }
 
+/**
+ * Maps one row of the sampleRandMatrix to a distribution and the other rows to their deterministic value/mean
+ * @param {2d matrix [[]]} sampleRandMatrix
+ * @param {Object} currDriver
+*/
+const createSensitivitySampleMatrixMapping = (sampleRandMatrix, varyingDriverIndex, drivers) => {
+  const MC_ITERATIONS = sampleRandMatrix[0].length;
+  const driverCount = drivers.length;
 
+  const lsaSampleMatrix = [];
+  for (let i = 0; i < driverCount; i++) {
 
+    if (i === varyingDriverIndex) {
+      // Vary this driver using its distribution
+      const variedDriver = drivers[i];
+      const variedSamples = sampleRandMatrix[i].map(r => mapToDist(variedDriver, r));
 
+      lsaSampleMatrix.push(variedSamples);
+    } else {
+      // Fix other drivers at their mean values
+      const meanValue = drivers[i].cost.mean;
+      lsaSampleMatrix.push(Array(MC_ITERATIONS).fill(meanValue));
+
+    }
+
+  }
+  if (true) { //(varyingDriverIndex == 1){
+    console.log("lsaSampleMatrix for driver", varyingDriverIndex, ":", sampleRandMatrix, lsaSampleMatrix, drivers);
+  }
+  return lsaSampleMatrix;
+}
+//#endregion
 
 //#region Sobol GSA
 
@@ -450,31 +531,69 @@ function createSobolC(matrixA, matrixB, j) {
  * 
  * @returns 
  */
-function SobolGSA(iterations, driverCount, costDriversById) {
+const runSobolGSA = async ({ iterations, abstractDrivers, simulator, stateReports }) => {
+  console.log("[runSobolGSA] called with abstractDrivers", abstractDrivers, "and iterations", iterations);
+  const drivers = getConcreteCostDriverArray(abstractDrivers)
+  const driverCount = drivers.length;
+  console.log("[runSobolGSA] called with drivers", drivers, driverCount, "and iterations", iterations);
+
   let matrixA = createSampleMatrix(iterations, driverCount)
   let matrixB = createSampleMatrix(iterations, driverCount)
 
-  matrixA = mapMatrixToDistribution(matrixA, costDriversById)
-  matrixB = mapMatrixToDistribution(matrixB, costDriversById)
+  matrixA = mapMatrixToDistribution(matrixA, drivers)
+  matrixB = mapMatrixToDistribution(matrixB, drivers)
+
+  stateReports.setStarted(1);
+  stateReports.started = 1;
+
+  console.log("Sobol GSA with matrixA", matrixA, "and matrixB", matrixB);
 
   // baseline simulations for A and B
-  const resultsA = monteCarlo_matrix(matrixA);
-  const resultsB = monteCarlo_matrix(matrixB);
+  const resultsA = await monteCarlo_matrix({
+    sampleMatrix: matrixA,
+    drivers, simulator, stateReports,
+    progress_repeats: driverCount + 2
+  });
+  const resultsB = await monteCarlo_matrix({
+    sampleMatrix: matrixB,
+    drivers, simulator, stateReports,
+    progress_repeats: driverCount + 2
+  });
+  if (resultsA === "aborted" || resultsB === "aborted" || stateReports.started === -1) {
+    console.log("[runLocalSensitivityAnalysis] lsa aborted");
+    return "aborted";
+  }
+
+  console.log("Sobol GSA with base results", resultsA, resultsB);
 
   const sobolResults = [];
   for (let i = 0; i < driverCount; i++) {
-    const matrixC = createSobolC(matrixA, matrixB, i);
-    const resultsC = monteCarlo_matrix(matrixC);
+    console.log(`[runLocalSensitivityAnalysis] Start Progress: ${i + 1}/${driverCount}`);
+    const matrixC = createSobolC(matrixA, matrixB, i); //replace row i from A with that from B
+    const resultsC = await monteCarlo_matrix({   // simulate matrix C
+      sampleMatrix: matrixC,
+      drivers,
+      simulator,
+      stateReports,
+      progress_repeats: driverCount + 2,
+    });
+
+    if (resultsC === "aborted" || stateReports.started === -1) {
+      console.log("[runLocalSensitivityAnalysis] lsa aborted");
+      return "aborted";
+    }
 
     sobolResults.push({
       driverIndex: i,
-      resultsC,
+      results: resultsC,
+      driverName: drivers[i].name,
     });
+
   }
 
   return {
-    resultsA,
-    resultsB,
+    aMatrix: resultsA,
+    bMatrix: resultsB,
     sobolResults,
   };
 }
@@ -501,11 +620,12 @@ function displayOutputs() {
 //#endregion
 
 
-
+//#region Exported functions
 export {
   runSimpleMonteCarloSimulation,
   localSensAnalysis,
-  getConcreteCostDriverArray
+  getConcreteCostDriverArray,
+  runSobolGSA
 }
 
 

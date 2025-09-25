@@ -41,7 +41,8 @@ export function AnalysisResultDiagrams({ activity, costs, stats }) {
     //#region html return
     return (
         <ThemeProvider theme={theme}>
-            <Box w="400px" p={1} borderWidth={1} borderRadius="md">
+            {/* <Box w="400px" p={1} borderWidth={1} borderRadius="md"> */}
+             <Box minWidth="400px" p={1} borderWidth={1} borderRadius="md">
                 {/* Activity Name */}
                 <Text fontWeight="semibold" color="gray.600" textAlign="center" >
                     {activity.replace(/_/g, " ")}
