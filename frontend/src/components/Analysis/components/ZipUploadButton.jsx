@@ -125,11 +125,12 @@ async function uploadAndParseResultsZip(file) {
 
 // Even simpler - check all entries for Driver_ pattern
 function detectToolTypeFromZip(zip) {
+    console.log("[zip upload] Detecting tool type from ZIP entries:", zip);
     for (const relativePath of Object.keys(zip.files)) {
         if (relativePath.includes('A_Matrix') || relativePath.includes('B_Matrix    ')) {
             return "sobol GSA";
         }
-        else if (relativePath.includes('Driver_')) {
+        else if (relativePath.includes('Baseline_')) {
             return "local SA";
         }
     }

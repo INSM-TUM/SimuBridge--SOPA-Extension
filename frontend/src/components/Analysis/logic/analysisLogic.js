@@ -485,7 +485,7 @@ const createSensitivitySampleMatrixMapping = (sampleRandMatrix, varyingDriverInd
  * @returns 
  */
 function mapMatrixToDistribution(A, costDriversById) {
-  printMatrix(A)
+  // printMatrix(A)
   const mappedA = []
   console.log("######")
   const driverKeys = Object.keys(costDriversById);
@@ -495,11 +495,11 @@ function mapMatrixToDistribution(A, costDriversById) {
       return mapToDist(currentDriver, u);
     });
     mappedA.push(row);
-    console.log("mapping ", i)
-    printMatrix(mappedA)
+    // console.log("mapping ", i)
+    // printMatrix(mappedA)
   }
-  console.log("mapping ")
-  printMatrix(mappedA)
+  // console.log("mapping ")
+  // printMatrix(mappedA)
   return mappedA;
 
 }
@@ -568,7 +568,7 @@ const runSobolGSA = async ({ iterations, abstractDrivers, simulator, stateReport
 
   const sobolResults = [];
   for (let i = 0; i < driverCount; i++) {
-    console.log(`[runLocalSensitivityAnalysis] Start Progress: ${i + 1}/${driverCount}`);
+    console.log(`[runLocalSensitivityAnalysis] Start Progress: ${i + 1}/${driverCount}+2`);
     const matrixC = createSobolC(matrixA, matrixB, i); //replace row i from A with that from B
     const resultsC = await monteCarlo_matrix({   // simulate matrix C
       sampleMatrix: matrixC,

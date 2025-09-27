@@ -32,6 +32,7 @@ export default function AnalysisResultCard({ response, projectName, drivers }) {
     const [deterministic, setDeterministic] = useState([]);
     const [analysisResults, setAnalysisResults] = useState([]);
 
+    //#region initiate processing
     // runs verarbeiten, sobald Komponente gerendert wurde
     React.useEffect(() => {
         async function processRuns() {
@@ -42,6 +43,9 @@ export default function AnalysisResultCard({ response, projectName, drivers }) {
             } else if (response.analysisName === "local SA") {
                 await processLSARuns(runs, projectName, setAnalysisResults, drivers);
                 console.log("AnalysisResultCard runs processed LSA");
+            } else if (response.analysisName === "sobol GSA") {
+                await processSobolRuns(runs, projectName, setAnalysisResults, drivers);
+                console.log("AnalysisResultCard runs processed Sobol GSA");
             }
             else {
                 console.log("Unknown analysis type:", response.analysisName);
@@ -51,6 +55,7 @@ export default function AnalysisResultCard({ response, projectName, drivers }) {
 
         processRuns();
     }, [runs]);
+    //#endregion
 
     React.useEffect(() => {
         // console.log("Deterministic updated:", deterministic);
@@ -67,7 +72,6 @@ export default function AnalysisResultCard({ response, projectName, drivers }) {
             </CardHeader>
             <CardBody>
                 <Flex direction="column" gap={6}>
-                    #region Summary Section
                     {response.analysisName === "monte carlo" || response.analysisName === "deterministic" ? (
                         <div>
                             {/* Deterministic Activities Section */}
@@ -121,7 +125,11 @@ export default function AnalysisResultCard({ response, projectName, drivers }) {
                                             <Box w="25%" h="250px">
                                                 <Text fontWeight="bold" mb={2}>Standard Error of the Mean (SEM) per Activity</Text>
                                                 <ThemeProvider theme={theme}>
-                                                    <BarChart
+                                                    <SimpleBarChart results={analysisResults.reduce((acc, a) => {
+                                                        acc[truncatedString(a.name.replaceAll(/_/g, " "))] = a.stats.sem;
+                                                        return acc;
+                                                    }, {})} />
+                                                    {/* <BarChart
                                                         xAxis={[
                                                             {
                                                                 data: truncatedData(analysisResults.map(a => a.name.replaceAll(/_/g, " "))),
@@ -143,7 +151,7 @@ export default function AnalysisResultCard({ response, projectName, drivers }) {
                                                         margin={{
                                                             bottom: 100, // Adjust this value as needed
                                                         }}
-                                                    />
+                                                    /> */}
                                                 </ThemeProvider>
                                             </Box>
 
@@ -158,7 +166,7 @@ export default function AnalysisResultCard({ response, projectName, drivers }) {
                                     </Box></Box>
                             )}
                         </div>
-                    )  : response.analysisName === "local SA" ? (
+                    ) : response.analysisName === "local SA" ? (
                         <Box>
                             <Text fontWeight="bold" mb={2}>Sensitivities general stats</Text>
                             {/* <Text mb={4}>Only activities with non-zero sensitivity are shown. {JSON.stringify(getDriversWithValue(analysisResults.sensitivitiesPerActivity))} ah</Text> */}
@@ -183,14 +191,49 @@ export default function AnalysisResultCard({ response, projectName, drivers }) {
 
                             </Flex>
                         </Box>
-                    ): response.analysisName === "sobol GSA" ? (
+                    ) : response.analysisName === "sobol GSA" ? (
 
-                        <Box>todo</Box>
+                        <Box>
+                            <Text fontWeight="bold" mb={2}>First Order Indices per Activity </Text>
+                            {analysisResults.firstOrder !== undefined && <Flex wrap="wrap" gap={6} mt={6}>
+                                {
+                                    Object.entries(analysisResults.firstOrder).map(([activityName, activitiesDrivers]) => (
+
+                                        <Box w="20%" h="250px">
+                                            <Text fontWeight="medium" mb={2}>{activityName.replaceAll(/_/g, " ")}</Text>
+                                            <ThemeProvider theme={theme}>
+                                                <SimpleBarChart results={activitiesDrivers} />
+                                            </ThemeProvider>
+                                        </Box>
+                                    ))
+                                }
+                            </Flex>
+                            }
+
+                            <Divider mt={6} mb={6} />
+
+                            <Text fontWeight="bold" mb={2}>Total Order Indices per Activity </Text>
+                            {analysisResults.totalOrder !== undefined && <Flex wrap="wrap" gap={6} mt={6}>
+                                {
+                                    Object.entries(analysisResults.totalOrder).map(([activityName, activitiesDrivers]) => (
+
+                                        <Box w="20%" h="250px">
+                                            <Text fontWeight="medium" mb={2}>{activityName.replaceAll(/_/g, " ")}</Text>
+                                            <ThemeProvider theme={theme}>
+                                                <SimpleBarChart results={activitiesDrivers} />
+                                            </ThemeProvider>
+                                        </Box>
+                                    ))
+                                }
+                            </Flex>
+                            }
+
+                        </Box>
                     ) : (
                         <Text>Unknown analysis type: {response.analysisName}</Text>
                     )
-                
-                }
+
+                    }
 
 
                 </Flex>
@@ -202,7 +245,7 @@ export default function AnalysisResultCard({ response, projectName, drivers }) {
 }
 
 
-async function extractActivityCosts(run, projectName) {
+async function extractActivityCostsOld(run, projectName) {
     // console.log("Extracting activity costs from run:", run, projectName);
     const statFileName = run.files.find((f) => f.endsWith("_statistic.xml"));
     // console.log("Statistic file name:", statFileName);
@@ -244,43 +287,86 @@ async function extractActivityCosts(run, projectName) {
     return runCosts;
 }
 
+async function extractActivityCosts(run, projectName) {
+    const statFileName = run.files.find((f) => f.endsWith("_statistic.xml"));
+    if (!statFileName) return {};
+
+    const filePath = (run.requestId ? run.requestId + "/" : "") + statFileName;
+    const fileData = await getFile(projectName, filePath);
+    console.log("File data length:", fileData);
+    const fileXml = parser.parseFromString(fileData.data, "text/xml");
+
+    const activityContainers = fileXml.getElementsByTagName("Activity_Cost");
+    const runCosts = {};
+
+    for (const container of activityContainers) {
+        const activities = container.getElementsByTagName("Activity");
+        for (const activity of activities) {
+            const activityId = activity.getAttribute("id");
+            if (!activityId) continue;
+
+            const avgCostElem = activity.getElementsByTagName("Activity_Average_Cost")[0];
+            if (!avgCostElem) continue;
+
+            const costValue = parseFloat(avgCostElem.textContent);
+            if (!isNaN(costValue)) runCosts[activityId] = costValue;
+        }
+    }
+
+    return runCosts;
+}
+
+
 /* Aggregate costs per activity across all runs */
 /**
  * 
  * @param {*} data {run:{costs:{activities} }}
  * @returns 
  */
-function aggregateCosts(data) {
+function aggregateCosts(runs) {
     const result = {};
 
-    data.forEach(run => {
+    runs.forEach(run => {
         const costs = run.costs;
-        // console.log("[aggregateCosts] Run costs:", costs);
         for (const activity in costs) {
-            if (!result[activity]) {
-                result[activity] = [];
-            }
-            result[activity].push(costs[activity][1]);
+            if (!result[activity]) result[activity] = [];
+            result[activity].push(costs[activity]); // <— directly push the number
         }
     });
 
     return result;
 }
 
-/* Aggregate total costs across all activities */
-function aggregateOverallDriverCosts(drivers) {
 
+/** Aggregate total costs across all activities per driver */
+function aggregateOverallDriverCostsXX(resultsPerDriver) {
+    console.log("[aggregateOverallDriverCosts] Results per driver:", resultsPerDriver);
+    const result = {};
+
+    for (const [driver, data] of Object.entries(resultsPerDriver)) {
+        const costs = data.costs; // this is { activity: number, ... }
+        const totalCost = Object.values(costs).reduce((sum, c) => sum + c, 0);
+        result[driver] = totalCost;
+    }
+
+    console.log("[aggregateOverallDriverCosts] Overall driver costs:", result);
+    return result;
+}
+
+function aggregateOverallDriverCosts(drivers) {
     const result = {};
 
     for (const driver in drivers) {
         const activities = drivers[driver].costs;
+        const activityNames = Object.keys(activities);
+        if (activityNames.length === 0) continue;
 
         // Assume all arrays are same length
-        const numRuns = Object.values(activities)[0].length;
+        const numRuns = activities[activityNames[0]].length;
         const totalPerRun = Array(numRuns).fill(0);
 
         // Sum costs per run across activities
-        for (const activity in activities) {
+        for (const activity of activityNames) {
             const costs = activities[activity];
             for (let i = 0; i < numRuns; i++) {
                 totalPerRun[i] += costs[i];
@@ -291,8 +377,8 @@ function aggregateOverallDriverCosts(drivers) {
         const meanTotal = totalPerRun.reduce((a, b) => a + b, 0) / numRuns;
         result[driver] = meanTotal;
     }
-    console.log("[aggregateOverallDriverCosts] Overall driver costs:", result);
 
+    console.log("[aggregateOverallDriverCosts] Overall driver costs:", result);
     return result;
 }
 
@@ -324,6 +410,8 @@ function formatDuration(durationMs, includeFractional = false) {
     if (minutes === 0) return `${seconds} sec`;
     else return `${minutes} min ${seconds} sec`;
 }
+
+
 
 //#region Processing Functions
 async function processMCRuns(runs, projectName, setDeterministic, setAnalysisResults) {
@@ -369,12 +457,13 @@ async function processLSARuns(results, projectName, setAnalysisResults, drivers)
     baseCosts = aggregateCosts([{ costs: baseCosts }]);
     // Filter out the baseline object to create a new array
     const runs = results.filter(driver => driver.driverName !== 'baseline');
-    // console.log("processLSARuns", runs, projectName);
+    console.log("processLSARuns", runs, projectName);
+
     const runsPerDriver = {};
     const resultsPerDriver = {};
-    for (let idx = 0; idx < runs.length; idx++) {
+    for (let idx = 0; idx < runs.length; idx++) { // iterate over each varied driver's runs
         const driver = runs[idx];
-        console.log("Processing lsa driver runs:", driver, projectName);
+        // console.log("Processing lsa driver runs:", driver, projectName);
         runsPerDriver[driver.driverName] = [];
         for (const run of driver.results) {
             // console.log("Processing run:", run.requestId, run);
@@ -388,22 +477,33 @@ async function processLSARuns(results, projectName, setAnalysisResults, drivers)
             });
         }
         const aggCosts = aggregateCosts(runsPerDriver[driver.driverName]);
+        console.log("[Output Diagramms] Per Activity Costs ", runsPerDriver[driver.driverName], Object.entries(runsPerDriver[driver.driverName]));
         const activityStats = Object.fromEntries(Object.entries(aggCosts).map(([activity, values]) => [activity, stats(values)]))
         const activitySensitivities = computeActivitySensitivities(baseCosts, activityStats);
         resultsPerDriver[driver.driverName] = { "costs": aggCosts, "stats": activityStats, "sensitivities": activitySensitivities };
-        // console.log("[Output Diagramms] Per Activity Costs ", perActivityCosts);
+
     }
     runsPerDriver["baseline"] = baseCosts;
     console.log("[ARC] All LSA Runs ", runsPerDriver, resultsPerDriver);
+
     const overallCosts = aggregateOverallDriverCosts(resultsPerDriver);
-    const baselineOverallCosts = Object.values(baseCosts).map(v => v[0]).reduce((a, b) => a + b, 0);
+    const baselineOverallCosts = Object.values(baseCosts).map(arr => arr.reduce((a, b) => a + b, 0)).reduce((a, b) => a + b, 0);
+    console.log("[ARC] Baseline Overall Costs ", baseCosts, baselineOverallCosts, overallCosts);
+
     // overallCosts.mapValues(c => c - baselineOverallCosts);
     const overallSensitivities = Object.fromEntries(
-        Object.entries(overallCosts).map(([key, value]) => [key, (value - baselineOverallCosts)])
+        Object.entries(overallCosts).map(([driver, value]) => [driver, value - baselineOverallCosts])
     );
+
     const scaled_overallSensitivities = Object.fromEntries(
-        Object.entries(overallCosts).map(([key, value]) => [key, (value - baselineOverallCosts)/drivers.filter(d => d.name === key)[0]?.cost.mean])
+        Object.entries(overallCosts).map(([driver, value]) => {
+            const driverMean = drivers[driver]?.costs
+                ? Object.values(drivers[driver].costs).flat().reduce((a, b) => a + b, 0) / Object.values(drivers[driver].costs)[0].length
+                : 1; // fallback to avoid division by 0
+            return [driver, (value - baselineOverallCosts) / driverMean];
+        })
     );
+
     console.log("[ARC] Overall Costs per Driver ", overallCosts, baselineOverallCosts, overallSensitivities, scaled_overallSensitivities);
 
     const sensitivitiesPerActivity = reverseMapping(resultsPerDriver, "sensitivities");
@@ -412,7 +512,128 @@ async function processLSARuns(results, projectName, setAnalysisResults, drivers)
 
 }
 
+/**
+ * Processes Sobol GSA results to compute first-order and total-order indices.
+ * @param {object} results - The complete results object from the Sobol simulation.
+ * @param {string} projectName - The name of the project for file fetching.
+ * @param {Function} setAnalysisResults - State setter to store the computed indices.
+ * @param {Array<object>} drivers - The list of driver variables.
+ */
+export async function processSobolRuns(results, projectName, setAnalysisResults, drivers) {
+    if (!results || !results.aMatrix || !results.bMatrix || !results.sobolResults) {
+        console.error("Invalid results object provided for Sobol analysis.");
+        return;
+    }
+    console.log("Starting Sobol GSA processing...", results);
+
+    // Process A and B matrices to get activity costs.
+    const costsA = await processMatrix(results.aMatrix, projectName);
+    const costsB = await processMatrix(results.bMatrix, projectName);
+
+    // Process A_iB matrices for each driver.
+    const costsAiB = {};
+    for (const sobolResult of results.sobolResults) {
+        costsAiB[sobolResult.driverName] = await processMatrix(sobolResult.results, projectName);
+    }
+
+    console.log("Extracted costs from all matrices.", { costsA, costsB, costsAiB });
+
+
+    const firstOrderIndices = {};
+    const totalOrderIndices = {};
+    const allActivities = new Set([...Object.keys(costsA), ...Object.keys(costsB)]);
+
+    // Compute Sobol indices for each activity
+    for (const activity of allActivities) {
+        if (!costsA[activity] || !costsB[activity]) {
+            console.warn(`Skipping activity '${activity}' due to missing data in A or B matrix.`);
+            continue;
+        }
+
+        const numRuns = costsA[activity].length;
+        if (numRuns === 0) continue;
+
+        // Calculate the total variance of the combined A and B matrices.
+        const totalVariance = stats([...costsA[activity], ...costsB[activity]]).variance;
+
+        if (totalVariance === 0) {
+            console.warn(`Total variance is zero for activity '${activity}'. Skipping Sobol index calculation.`);
+            continue;
+        }
+
+        firstOrderIndices[activity] = {};
+        totalOrderIndices[activity] = {};
+
+        for (const driver of drivers) {
+            const driverName = driver.name;
+            const costsForDriver = costsAiB[driverName];
+            if (!costsForDriver || !costsForDriver[activity]) {
+                console.warn(`Skipping driver '${driverName}' for activity '${activity}' due to missing data.`);
+                continue;
+            }
+
+            // Compute first-order index (S_i)
+            // S_i = ( (1/N) * sum(Y_AiBj - Y_Bj)^2 ) / V(Y)
+            const firstOrderNumerator = costsForDriver[activity].reduce((sum, cost, i) => {
+                const diff = cost - costsB[activity][i];
+                return sum + diff * diff;
+            }, 0) / numRuns;
+
+            const firstOrder = firstOrderNumerator / totalVariance;
+
+            // Compute total-order index (S_Ti)
+            // S_Ti = ( (1/(2*N)) * sum(Y_Aj - Y_AiBj)^2 ) / V(Y)
+            const totalOrderNumerator = costsForDriver[activity].reduce((sum, cost, i) => {
+                const diff = costsA[activity][i] - cost;
+                return sum + diff * diff;
+            }, 0) / (2 * numRuns);
+
+            const totalOrder = totalOrderNumerator / totalVariance;
+
+            firstOrderIndices[activity][driverName] = firstOrder;
+            totalOrderIndices[activity][driverName] = totalOrder;
+        }
+    }
+    console.log("Sobol indices computed:", { firstOrderIndices, totalOrderIndices }, reverseMappingAtoD(firstOrderIndices), Object.entries(getDriversWithValue(firstOrderIndices)));
+
+    // Update the analysis results state.
+    setAnalysisResults({
+        firstOrder: firstOrderIndices,
+        totalOrder: totalOrderIndices
+    });
+}
+
 //#endregion
+
+const processMatrixOld = async (matrix, projectName) => {
+    const allRuns = [];
+    for (const run of matrix) {
+        // console.log("Processing run:", run.requestId, run);
+        if (run.error) continue;
+        const runCosts = await extractActivityCosts(run, projectName);
+        allRuns.push({
+            requestId: run.requestId,
+            costs: runCosts
+        });
+    }
+    return aggregateCosts(allRuns);
+};
+
+const processMatrix = async (matrix, projectName) => {
+    const allRuns = [];
+    for (const run of matrix) {
+        if (run.error) continue;
+        console.log("Processing run:", run.requestId, run);
+        const runCosts = await extractActivityCosts(run, projectName);
+        allRuns.push({
+            requestId: run.requestId,
+            costs: runCosts
+        });
+    }
+    return aggregateCosts(allRuns); 
+};
+
+
 
 function calculateConfidenceInterval(mean, stdev, n) {
     if (n <= 1) {
@@ -428,10 +649,9 @@ function calculateConfidenceInterval(mean, stdev, n) {
     };
 }
 
-function truncatedData(data) {
-
-    let tt = data.map(a => a.length > 15 ? a.substring(0, 12) + '...' : a);
-    console.log("truncatedData:", data, tt);
+function truncatedString(a) {
+    const tt = (a.length > 15 ? a.substring(0, 12) + '...' : a);
+    // console.log("truncatedData:", a, tt);
     return tt;
 }
 
@@ -467,7 +687,7 @@ function computeActivitySensitivities(baselineCosts, statsPerActivity) {
  * @param {string} key - which nested object to reverse ("sensitivities", "stats", "costs")
  * @returns {Object} - { activity: { driver: value } }
  */
-function reverseMapping(resultsPerDriver, key) {
+function reverseMappingXX(resultsPerDriver, key) {
     const reversed = {};
 
     for (const [driver, driverData] of Object.entries(resultsPerDriver)) {
@@ -483,7 +703,40 @@ function reverseMapping(resultsPerDriver, key) {
     return reversed;
 }
 
+function reverseMapping(resultsPerDriver, key) {
+    const perActivity = {};
+    for (const [driver, payload] of Object.entries(resultsPerDriver)) {
+        const sens = (payload && payload[key]) || {};
+        for (const [activity, value] of Object.entries(sens)) {
+            if (!perActivity[activity]) perActivity[activity] = {};
+            perActivity[activity][driver] = value;
+        }
+    }
+    return perActivity;
+}
 
+
+function reverseMappingAtoD(resultsPerDriver) {
+    let result = {};
+    for (const [act, actDrivers] of Object.entries(resultsPerDriver)) {
+        // console.log("reverseMappingAtoD", act, actDrivers);
+
+        for (const [driver, value] of Object.entries(actDrivers)) {
+            if (!result[driver]) {
+                result[driver] = {};
+            }
+            result[driver][act] = value;
+        }
+    }
+    return result;
+}
+
+
+/**
+ *  Filter out drivers with zero value across all activities
+ * @param {*} activityData 
+ * @returns 
+ */
 function getDriversWithValue(activityData) {
     const result = {};
 
@@ -502,3 +755,31 @@ function getDriversWithValue(activityData) {
 
     return result;
 }
+
+
+const SimpleBarChart = ({ results }) => (
+    <BarChart
+        xAxis={[
+            {
+                data: Object.keys(results),
+                scaleType: "band",
+                tickLabelStyle: {
+                    angle: -35, // Rotates labels by -45 degrees
+                    textAnchor: 'end', // Aligns the text to the end of the label
+                    fontSize: 10, // Optional: Adjust font size for better fit
+                },
+            },
+        ]}
+        series={[
+            {
+                data: Object.values(results),
+                name: "1. Order Indices",
+                minBarSize: 2, // Ensures a minimum bar height of 2 pixels
+            },
+        ]}
+        margin={{
+            bottom: 100, // Adjust this value as needed
+        }}
+    />
+);
+

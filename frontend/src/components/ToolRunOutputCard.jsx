@@ -240,7 +240,7 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
                     )
                 )
             ) : toolName === "local SA" ? ( /// local SA
-                !response || response.length === 0 ? (
+                !response || !response.length || response.length === 0 ? (
                     <>No {processName} runs in this session yet.</>
                 ) : (
                     <>
@@ -282,7 +282,7 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
                 !response || !response.aMatrix || !response.bMatrix || !response.sobolResults ? (
                     <>No {processName} runs in this session yet.</>
                 ) : (
-                    <> <Heading size='sm' mt={2}>Base Results</Heading>
+                    <> <Heading size='sm'  mt={2} mb={2}>Base Results</Heading>
                         <Accordion allowMultiple>
                             <AccordionItem>
                                 <h2>
@@ -307,8 +307,8 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
                                 </AccordionPanel>
                             </AccordionItem>
                         </Accordion>
-                        <Divider />
-                        <Heading size='sm' mt={2}>Per Driver Results</Heading>
+                        <Divider mt={2} mb={2} />
+                        <Heading size='sm' mt={2} mb={2} >Per Driver Results</Heading>
                         <Accordion allowMultiple>
                             {response.sobolResults.map((driverResult, driverIdx) => (
                                 <AccordionItem key={driverIdx}>

@@ -219,7 +219,7 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
                   </Button>
                 )}
 
-              <Text fontSize="s" textAlign="start" > Note:  {JSON.stringify(started)}</Text>
+              <Text fontSize="s" textAlign="start" > Results?:  {JSON.stringify(started)}</Text>
 
 
             </Flex>

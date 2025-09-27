@@ -1,22 +1,22 @@
 import axios from 'axios';
 import { setFile } from '../../../util/Storage';
 import { convertScenario } from 'simulation-bridge-converter-scylla/ConvertScenario';
-import { runSimpleMonteCarloSimulation } from "./analysisLogic";
+import { runSimpleMonteCarloSimulation, localSensAnalysis, runSobolGSA } from "./analysisLogic";
 
-
-// This is the main entry point called from your component
+//#region main entry point
+// This is the main entry point called from AnalysisPage to run the selected analysis
 export const runMultipleSimulations = async ({
   scenarioName,
   mcIterations: MC_ITERATIONS,
   getData,
   projectName,
   stateReports,
-  source,
+  cancelToken,
   analysisName
 }) => {
-  console.log("[runMultipleSimulations] called with scenarioName", scenarioName, "and mc iterations", MC_ITERATIONS);
+  console.log("[simulationRunner] runMultipleSimulations(): called with scenarioName", scenarioName, "and mc iterations", MC_ITERATIONS);
   let variants = getData().getCurrentScenario().environmentImpactParameters.variants;
-  console.log("start simulation, Vaiants:", variants)
+  console.log("[simulationRunner] runMultipleSimulations(): start simulation, Vaiants:", variants)
   if (variants.reduce((sum, variant) => sum + parseInt(variant.frequency), 0) !== 100) ///todo: If variants have non-integer frequencies (e.g., decimals), the current sum check will fail.
   {
     stateReports.toasting("error", "Frequencies sum is not 100%", "For correct simulation, the sum of frequencies must be 100%");
@@ -25,13 +25,12 @@ export const runMultipleSimulations = async ({
   }// todo: add warning for multiple of same abstract in same variant (not allowed)
 
   stateReports.setFinished(false);
-  stateReports.setStarted(5);
+  stateReports.setStarted(1);
   try {
     const scenarioData = getData().getScenario(scenarioName);
     // console.log('ScenarioData', scenarioData);
 
-
-    const simulator = createSimulator(scenarioData, scenarioName, stateReports, source, projectName);
+    const simulator = createSimulator(scenarioData, scenarioName, stateReports, cancelToken, projectName);
     let simulationResults = {
       analysisName,
       runs: [],
@@ -45,10 +44,24 @@ export const runMultipleSimulations = async ({
       case "monte carlo":
         console.log("runSimpleMonteCarloSimulation with scenarioData", scenarioData, "and mc iterations", MC_ITERATIONS);
         simulationResults.runs = await runSimpleMonteCarloSimulation({ MC_ITERATIONS, scenarioData, simulator, stateReports });
-        console.log("simulation Run completed",);
+        console.log("simulation mc Run completed");
         break;
       case "local SA":
-        simulationResults.runs = await simulator();
+        console.log("localSensAnalysis with scenarioData", scenarioData, "and mc iterations", MC_ITERATIONS);
+        simulationResults.runs = await localSensAnalysis({ MC_ITERATIONS, scenarioData, simulator, stateReports });
+        console.log("simulation local SA Run completed",);
+        break;
+
+      case "sobol GSA":
+        console.log("[analysisLogic] sobol GSA with scenarioData", scenarioData, "and mc iterations", MC_ITERATIONS);
+        simulationResults.runs = await runSobolGSA({iterations:MC_ITERATIONS, abstractDrivers: scenarioData.environmentImpactParameters.costDrivers, simulator, stateReports})
+        console.log("simulation sobol GSA completed",);
+        break;
+      case "deterministic":
+        simulationResults.runs = []
+        const detRun= await simulator(scenarioData.environmentImpactParameters.costDrivers, 1);
+        simulationResults.runs.push(detRun);
+        console.log("simulation deterministic Run completed");
         break;
       default:
         console.log("Unknown analysis name:", analysisName);
@@ -60,20 +73,20 @@ export const runMultipleSimulations = async ({
     simulationResults.durationMs = endTime - startTime; // duration [milliseconds]
 
 
-    stateReports.setStarted(false);
+    // stateReports.setStarted(0);
+    stateReports.started = 0;
+    stateReports.setStarted(100)
     stateReports.setFinished(true);
 
     stateReports.toasting("success", "Monte Carlo Simulation", `Completed ${MC_ITERATIONS} simulations in ${simulationResults.durationMs} ms`);
-    console.log("Simulation Results:", simulationResults);
+    console.log("[simulationRunner] runMultipleSimulations(): Simulation Results:", simulationResults);
     sessionStorage.setItem(projectName + '/analysisResults', JSON.stringify(simulationResults));
     stateReports.setResponse(simulationResults);
     // stateReports.setResponse(responseObject);
 
     // stateReports.toasting a success message
     stateReports.toasting("success", "Success", "Analysis was successful");
-    // todo: initiate analysis result display
 
-    // todo - implement the monte carlo logic here using the simulate function
   } catch (err) {
     stateReports.setStarted(false);
     stateReports.setErrored(true);
@@ -82,15 +95,18 @@ export const runMultipleSimulations = async ({
   }
 }
 
+//#endregion
+
+//#region prepare and communicate with simulation API 
 /**
  * Simulator to give to the specific analysis loop functions without sampledGlobalConfig
  * 
  * @param {*} stateReports 
- * @param {*} source 
+ * @param {*} cancelToken 
  * @param {*} projectName 
  * @returns 
  */
-function createSimulator(scenarioData, scenarioName, stateReports, source, projectName) {
+function createSimulator(scenarioData, scenarioName, stateReports, cancelToken, projectName) {
   return async function (drivers, iteration) {
     // console.log("[createSimulator()] drivers", drivers, scenarioData);
     // Deep copy to avoid mutating original
@@ -112,17 +128,14 @@ function createSimulator(scenarioData, scenarioName, stateReports, source, proje
     let bpmn = processModel.BPMN;
     bpmn = bpmn.replace(/'/g, "");
     //console.log('BPMN', bpmn);
-    return await simulate(globalConfig, simConfig, scenarioName_i, processModel, bpmn, stateReports, source, projectName);
+    return await simulate(globalConfig, simConfig, scenarioName_i, processModel, bpmn, stateReports, cancelToken, projectName);
   };
 }
 
-// const replaceScenarioDrivers = (drivers, scenarioData) => {
-//   scenarioData.environmentImpactParameters.costDrivers = drivers;
-//   return scenarioData;
-// }
 
-// function to start the simulation
-const simulate = async (globalConfig, simConfig, scenarioName, processModel, bpmn, stateReports, source, projectName) => {
+
+// function to call the simulation API in scylla
+const simulate = async (globalConfig, simConfig, scenarioName, processModel, bpmn, stateReports, cancelToken, projectName) => {
   // Resetting response and finished states
   stateReports.setResponse({ message: "", files: [] });
   stateReports.setErrored(false);
@@ -133,7 +146,7 @@ const simulate = async (globalConfig, simConfig, scenarioName, processModel, bpm
   const formData = new FormData();
 
   // Creating a cancel token and assigning it to the current source
-  source.current = axios.CancelToken.source();
+  // source.current = axios.CancelToken.source();
   // console.log("[simulate] with global:", globalConfig);
   try {
     const bpmnFile = new File([bpmn], processModel.name + '.bpmn')
@@ -152,7 +165,7 @@ const simulate = async (globalConfig, simConfig, scenarioName, processModel, bpm
         'requestId': requestId,
         'Content-Type': 'multipart/form-data'
       },
-      cancelToken: source.current.token
+      cancelToken: cancelToken
     });
     r.data.files.forEach(file => {
       setFile(projectName, requestId + '/' + file.name, file.data);
@@ -189,10 +202,4 @@ const simulate = async (globalConfig, simConfig, scenarioName, processModel, bpm
   }
 };
 
-
-
-// const getGlobalConfigSample = async (iteration, globalConfig) => {
-//   // todo: This function should return a sample of the global configuration for the given iteration
-//   // For now, we will just return the globalConfig as is
-//   return globalConfig;
-// };
+//#endregion
