@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
+import { db } from './db'
 import axios from 'axios';
 import { Flex, Heading, Card, CardHeader, CardBody, Text, Select, Stack, Button, Progress, Box, Textarea, UnorderedList, ListItem, Grid, Input } from '@chakra-ui/react';
 import { FiChevronDown } from 'react-icons/fi';
 
-import { getFile, getScenarioFileName, setFile } from "../../util/Storage";
-import { convertScenario } from "simulation-bridge-converter-scylla/ConvertScenario";
+
 import RunProgressIndicationBar from "../RunProgressIndicationBar";
 import ToolRunOutputCard from "../ToolRunOutputCard";
 import DriverEditTab from "./components/DriverEditTab";
@@ -18,56 +18,48 @@ import { saveAllCostDrivers, mapAbstractDriversFromConcrete } from "../../compon
 
 const AnalysisPage = ({ projectName, getData, toasting }) => {
 
-  // Setting initial states of started, finished, and response
   const [started, setStarted] = useState(false);
   const [finished, setFinished] = useState(false);
   const [errored, setErrored] = useState(false);
-  const [response, setResponse] = useState(JSON.parse(sessionStorage.getItem(projectName + '/analysisResults')) || {});
+  // const [response, setResponse] = useState(JSON.parse(sessionStorage.getItem(projectName + '/analysisResults')) || {});
+  // const [response, setResponse] = useState(loadLargeAnalysis(projectName));
+  const [response, setResponse] = useState({});
 
 
   const [scenarioName, setScenarioName] = useState();
   const [simulator, setSimulator] = useState();
   const [simulationDriverSettings, setSimulationDriverSettings] = useState(getData().getCurrentScenario().environmentImpactParameters.costDrivers);
 
-  const [analysisName, setAnalysisName] = useState();
+  const [toolName, setToolName] = useState();
   const [analysisTypes, setAnalysisTypes] = useState(["deterministic", "monte carlo", "local SA", "sobol GSA"]);
   const [mcIterations, setMcIterations] = useState(5);
 
-  // Creating a reference to the source that can be cancelled if needed
+  const driverEditGridSize = "220px 150px 400px 100px";
   const source = useRef(null);
 
 
   useEffect(() => {
-    // Fetching the scenario names from the data
+    // Fetching scenario names from data
     let simulationDriverSettings = getData().getCurrentScenario().environmentImpactParameters.costDrivers;
-    console.log("[Analyss Page]  useEffect(): costDrivers", simulationDriverSettings);
+    console.log("[Analyss Page] useEffect(): costDrivers", simulationDriverSettings);
   }, [getData]);
 
 
   const handleDriverUpdate = (abstractIndex, concreteIndex, updatedDriver) => {
     setSimulationDriverSettings((prevAC) => {
-      // 1. Copy the full abstract array
+     
       const newAbstractSettings = structuredClone(simulationDriverSettings);
-      console.log("handleDriverUpdate: prevAC", prevAC, newAbstractSettings);
-
-      // 2. Update the specific concrete driver
+      // console.log("handleDriverUpdate: prevAC", prevAC, newAbstractSettings);
       newAbstractSettings[abstractIndex].concreteCostDrivers[concreteIndex] = updatedDriver;
-
-      // 3. Flatten ALL concrete drivers from ALL abstracts
       const allConcreteDrivers = getConcreteCostDriverArray(newAbstractSettings);
-      console.log("handleDriverUpdate: allConcreteDrivers", allConcreteDrivers);
-
-      // 4. Rebuild ALL abstracts consistently
       const rebuiltAbstractDrivers = mapAbstractDriversFromConcrete(allConcreteDrivers);
 
-      // 5. Save the new settings
+      // Save  new settings
       saveAllCostDrivers(
         rebuiltAbstractDrivers,
         getData().getCurrentScenario().environmentImpactParameters.calcType,
         getData
       );
-
-      console.log("handleDriverUpdate: rebuiltAbstractDrivers", rebuiltAbstractDrivers);
 
       return rebuiltAbstractDrivers;
     });
@@ -75,11 +67,9 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
 
   // const MC_ITERATIONS = 5; // Set number of MC iterations here
   const start = async () => {
-    console.log("Iteration", mcIterations);
+    // console.log("Iteration", mcIterations);
     const stateReports = { 'toasting': toasting, 'setResponse': setResponse, 'setStarted': setStarted, 'setFinished': setFinished, 'setErrored': setErrored, 'started': started }
-    console.log("sim drivers", simulationDriverSettings)
-
-    // Overwrite costDrivers in getData with the edited simulationDriverSettings
+    // console.log("sim drivers", simulationDriverSettings)
     const currentScenario = getData().getCurrentScenario();
     currentScenario.environmentImpactParameters.costDrivers = simulationDriverSettings;
     source.current = axios.CancelToken.source();
@@ -91,35 +81,37 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
       projectName,
       stateReports,
       cancelToken: source.current.token,
-      analysisName
+      toolName
     });
 
-    console.log("[Analyss Page start()] Finished simulations", response); //response.runs.length
+    const finalResults = await loadLargeAnalysis(projectName);
+    setResponse(finalResults);
+    console.log("[Analyss Page start()] Finished simulations", finalResults); //response.runs.length
   }
 
-  // Function to abort the simulation
+  useEffect(() => {
+    const fetchInitialData = async () => {
+      console.log("fetchInitialData");
+      const data = await loadLargeAnalysis(projectName);
+      setResponse(data);
+    };
+
+    fetchInitialData();
+  }, [projectName]);
+
+  const handleAfterUpload = async () => {
+    const finalResults = await loadLargeAnalysis(projectName);
+    setResponse(finalResults);
+  };
+
+  // Function to abort simulation
   const abort = () => {
     console.log("abort");
-    // Cancelling the source and updating the finished and started states
+    // Cancelling source and updating finished and started states
     source.current.cancel("Simulation was canceled");
     setStarted(-1);
     setResponse({ message: "canceled" });
   };
-
-  //  function to download the file
-  // const download = async (data, fileName, encoding = 'charset=UTF-8') => {
-  //   // Fetching the file, creating a blob and a URL
-  //   const encodedData = encodeURIComponent(data);
-  //   const a = document.createElement("a");
-  //   // Creating a download link and triggering a click event
-  //   const fileType = fileName.split('.').pop();
-
-  //   a.href = 'data:application/' + fileType + ';' + encoding + ',' + encodedData;
-  //   a.download = fileName;
-  //   // a.download = `${sessionStorage.getItem("currentProject")}_${name}.${type}`;
-  //   a.click();
-  // };
-
 
 
   return (
@@ -131,7 +123,7 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
             <Heading size='md'> Environmental Simulation Parameters</Heading>
           </CardHeader>
           <CardBody>
-            <Grid templateColumns="220px 150px 1fr 100px" gap={4} mb={2} width={"60%"}>
+            <Grid templateColumns={driverEditGridSize} gap={4} mb={2} width={"60%"}>
               {/* Header row */}
               <Text fontWeight="bold">Name</Text>
               <Text fontWeight="bold">Distribution Type</Text>
@@ -145,6 +137,7 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
               abstractDriver.concreteCostDrivers.map((concreteDriver, concreteIndex) => (
                 <DriverEditTab
                   key={`${abstractIndex}-${concreteIndex}`}
+                  driverEditGridSize={driverEditGridSize}
                   concreteCostDriver={concreteDriver}
 
                   onUpdate={(updatedDriver) =>
@@ -168,7 +161,7 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
             >
               <Box>
                 <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold" > Select Analysis:</Text>
-                <Select value={analysisName} placeholder='choose analysis' width='100%' {...(!analysisName && { color: "gray" })} backgroundColor='white' icon={<FiChevronDown />} onChange={evt => setAnalysisName(evt.target.value)}>
+                <Select value={toolName} placeholder='choose analysis' width='100%' {...(!toolName && { color: "gray" })} backgroundColor='white' icon={<FiChevronDown />} onChange={evt => setToolName(evt.target.value)}>
                   {
                     analysisTypes.map((type, index) => {
                       return <option value={type} color="black">{type}</option>
@@ -176,7 +169,7 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
                   }
                 </Select>
               </Box>
-              {analysisName !== "deterministic" && (
+              {toolName !== "deterministic" && (
                 <Box mt={4}>
                   <Text fontSize="s" textAlign="start" color="#485152" fontWeight="bold">
                     Select Iterations:
@@ -220,23 +213,140 @@ const AnalysisPage = ({ projectName, getData, toasting }) => {
                 )}
 
               <Text fontSize="s" textAlign="start" > Results?:  {JSON.stringify(started)}</Text>
+              {/* .toFixed(2) */}
 
 
             </Flex>
           </CardBody>
         </Card>
- {/* #region Header Section */}
+        {/* #region Header Section */}
         <RunProgressIndicationBar {...{ started, finished, errored }} />
-        <ToolRunOutputCard {...{ projectName, response: response.runs, toolName: analysisName, processName: 'simulation', filePrefix: response.requestId, 'setResponse': setResponse, 'setAnalysisName': setAnalysisName, 'durationMs': response.durationMs, toasting }} />
+        <ToolRunOutputCard {...{
+          projectName, response: response.runs, toolName: toolName,
+          processName: 'simulation', filePrefix: response.requestId, 'setResponse': setResponse, 'setToolName': setToolName, 'durationMs': response.durationMs,
+          toasting, 'drivers': simulationDriverSettings, 'iterations': mcIterations, onUploadComplete: handleAfterUpload
+        }} />
         {/* <Text fontSize="s" textAlign="start" > Help: {JSON.stringify(response) }</Text> */}
         {response && response.runs && ((response.runs.length > 0) || response.runs.sobolResults) &&
           <AnalysisResultCard {... { response: response, projectName: projectName, drivers: getConcreteCostDriverArray(simulationDriverSettings) }} />
         }
-{/* #endregion */}
+        {/* #endregion */}
 
 
       </Stack>
     </Box>
   )
+
+
+  async function loadLargeAnalysis(projectName) {
+    // Fetch all chunks for given project in one go
+    const allChunks = await db.chunks.where({ projectName }).toArray();
+    console.log("[loadLargeAnalysis] allChunks:", allChunks);
+    if (allChunks.length === 0) {
+      return {}; // No data found
+    }
+
+    // Find main 'analysisResults' chunk to get metadata
+    const mainResultChunk = allChunks.find(c => c.key === 'analysisResults');
+    // console.log("[loadLargeAnalysis] mainResultChunk:", mainResultChunk);
+    if (!mainResultChunk) return {}; // Metadata is missing
+
+    const sessionResults = mainResultChunk.data;
+
+    // Rebuild full object from fetched chunks
+    const detRuns = sessionResults.runs;
+    const toolName = sessionResults.toolName; // todo load all from db
+    const chunkInfo = sessionResults.chunkInfo;
+    const concDrivers = getConcreteCostDriverArray(sessionResults.driversStructure || simulationDriverSettings);
+    const driverCount = concDrivers.length;
+
+    let runs = {};
+    // console.log("[loadLargeAnalysis] projectName:", projectName, driverCount, toolName,);
+
+    // find chunk data from pre-fetched array
+    const findChunkData = (key) => allChunks.find(c => c.key === key)?.data;
+
+    switch (toolName) {
+      case 'sobol GSA': {
+        runs.aMatrix = findChunkData('aMatrix') || [];
+        runs.bMatrix = findChunkData('bMatrix') || [];
+        runs.sobolResults = [];
+        for (let i = 0; i < driverCount; i++) {
+          const driverData = findChunkData(`driver_${concDrivers[i].name}`);
+          if (driverData) {
+            runs.sobolResults.push(driverData);
+          }
+        }
+        break;
+      } case 'local SA': {
+        const lsaRuns = [];
+
+        // baseline
+        const baselineData = findChunkData('baseline');
+        // console.log("[loadLargeAnalysis] baselineData:", baselineData);
+        if (baselineData) {
+          lsaRuns.push(baselineData);
+        }
+        // drivers
+        for (let i = 0; i < driverCount; i++) {
+          const driverData = findChunkData(`driver_${concDrivers[i].name}`);
+          // console.log("[loadLargeAnalysis] driverData:", driverData,`driver_${concDrivers[i].name}` );
+          if (driverData) {
+            lsaRuns.push(driverData);
+          }
+        }
+        if (lsaRuns.length > 0) {
+          runs = [
+            lsaRuns[0],
+            ...lsaRuns.slice(1).sort((a, b) => a.driverName.localeCompare(b.driverName))
+          ];
+        } else {
+          runs = [];
+        }
+
+        break;
+      } case 'monte carlo': {
+        let mcResults = [];
+        // loop through number of chunks stored in metadata
+        for (let i = 0; i < chunkInfo.chunkCount; i++) {
+          const chunkData = findChunkData(`mc_chunk_${i}`);
+          if (chunkData) {
+            // Concatenate array of results from each chunk
+            mcResults = mcResults.concat(chunkData);
+          }
+        }
+        runs = mcResults; // combined array
+        break;
+      } case 'deterministic': {
+        let detResults = [];
+        console.log("[loadLargeAnalysis] detRuns:", chunkInfo);
+        for (let i = 0; i < chunkInfo.chunkCount; i++) {
+          const chunkData = findChunkData(`det_chunk_${i}`);
+          if (chunkData) {
+            // Concatenate array of results from each chunk
+            detResults = detResults.concat(chunkData);
+          }
+        }
+        runs = detResults; // combined array
+        break;
+
+      }
+
+    }
+
+    const results = {
+      toolName,
+      finished: sessionResults.finished,
+      durationMs: sessionResults.durationMs,
+      runs
+    };
+    setToolName(toolName);
+    console.log("[loadLargeAnalysis] results:", results);
+    return results;
+  }
 }
+
 export default AnalysisPage;
+
+
+

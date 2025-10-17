@@ -31,7 +31,7 @@ export const calculateCostDrivers = async (apiUrl, impactMethodId, calculationTy
                 name: el.name,
                 category: el.category,
                 cost: driverWeights,
-                distType: "normal"
+                distType: "lognormal"
               }
              );
           }
@@ -41,7 +41,7 @@ export const calculateCostDrivers = async (apiUrl, impactMethodId, calculationTy
         (error) => onError(error)
       );
     }
-    console.log("monte carlo normalizedCostDrivers:", normalizedCostDrivers);
+    // console.log("monte carlo normalizedCostDrivers:", normalizedCostDrivers);
     onSuccess(normalizedCostDrivers);
   }
   catch (error) {

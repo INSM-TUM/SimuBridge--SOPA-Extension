@@ -39,7 +39,7 @@ const LcaIntegration = ({ getData, toasting }) => {
 
   const [selectedCalcType, setSelectedCalcType] = useState("lazy");
   const [calcType, setCalcType] = useState("");
-  const [mcIterations, setMcIterations] = useState(500);
+  const [mcIterations, setMcIterations] = useState(1000);
 
 
 
@@ -56,7 +56,6 @@ const LcaIntegration = ({ getData, toasting }) => {
     setIsScenarioModelLoaded(true);
   }, [getData]);
 
-  //let calculationType = 'lazy' //todo: lazy(default), eager, mc (monte carlo)
 
 
   useEffect(() => {

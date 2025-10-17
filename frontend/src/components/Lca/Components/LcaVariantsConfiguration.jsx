@@ -27,13 +27,18 @@ function LcaVariantsConfiguration({ getData, toasting }) {
   const [isScenarioModelLoaded, setIsScenarioModelLoaded] = useState(false);
 
   useEffect(() => {
-    const uniqueCostDrivers = lcaDm.getCostDriversFromScenario(getData);
-    setAllCostDrivers(uniqueCostDrivers);
+    const uniqueCostDrivers = lcaDm.getCostDriversFromScenario(getData)[0];
+    setAllCostDrivers(lcaDm.getCostDriversFromScenario(getData)[0]);
     setIsCostDriversLoaded(uniqueCostDrivers.length > 0);
 
     setVariants(lcaDm.getVariants(getData));
     setIsScenarioModelLoaded(true);
+    // console.log("LcaVariantsConfiguration useEffect - variants loaded:", uniqueCostDrivers, uniqueCostDrivers.length > 0);
   }, [getData]);
+
+  useEffect(() => {
+    // console.log("LcaVariantsConfiguration useEffect - all cost drivers:", allCostDrivers);
+  }, [allCostDrivers]);
 
   const handleSaveCostVariant = async (variant) => {
     const isExistingVariant = variant.id && variants.some(v => v.id === variant.id);

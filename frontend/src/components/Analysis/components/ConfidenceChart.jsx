@@ -9,8 +9,8 @@ import {
     Legend,
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
+import { formattedToString} from "./../analysisUtils.js";
 
-// Register the required Chart.js components. This needs to be done once.
 ChartJS.register(
     CategoryScale,
     LinearScale,
@@ -20,7 +20,7 @@ ChartJS.register(
     Legend
 );
 
-// The main ConfidenceChart component that takes data as a prop
+
 export const ConfidenceChart = ({ activityData, isDarkMode }) => {
     const [chartData, setChartData] = useState({});
 
@@ -50,7 +50,7 @@ export const ConfidenceChart = ({ activityData, isDarkMode }) => {
 
         // Data for the chart
         const dataForChart = {
-            labels: truncatedData(activityData.map(a => a.name.replaceAll(/_/g, " "))),
+            labels: activityData.map(a => a.name.replaceAll(/_/g, " ")),
             datasets: [
                 {
                     label: 'Mean',
@@ -65,7 +65,7 @@ export const ConfidenceChart = ({ activityData, isDarkMode }) => {
 
     }, [activityData, isDarkMode]);
 
-    // Custom Chart.js plugin to draw confidence interval error bars
+    // error bars
     const errorBarsPlugin = {
         id: 'errorBarsPlugin',
         afterDraw: (chart) => {
@@ -80,28 +80,28 @@ export const ConfidenceChart = ({ activityData, isDarkMode }) => {
                 const mean = item.stats.mean;
                 const confInterval = item.stats.confInterval;
 
-                // Calculate pixel positions for the error bar
+                // pixel positions for error bar
                 const topY = y.getPixelForValue(confInterval.upper)
                 const bottomY = y.getPixelForValue(confInterval.lower);
                 const barX = bar.x;
 
-                // Set up the line style
+                // line style:
                 ctx.strokeStyle = isDarkMode ? 'white' : 'black';
                 ctx.lineWidth = 1.5;
 
-                // Draw the main vertical error bar line
+                //main vertical line
                 ctx.beginPath();
                 ctx.moveTo(barX, topY);
                 ctx.lineTo(barX, bottomY);
                 ctx.stroke();
 
-                // Draw the top cap
+                // top cap
                 ctx.beginPath();
                 ctx.moveTo(barX - capWidth / 2, topY);
                 ctx.lineTo(barX + capWidth / 2, topY);
                 ctx.stroke();
 
-                // Draw the bottom cap
+                // bottom cap
                 ctx.beginPath();
                 ctx.moveTo(barX - capWidth / 2, bottomY);
                 ctx.lineTo(barX + capWidth / 2, bottomY);
@@ -112,12 +112,12 @@ export const ConfidenceChart = ({ activityData, isDarkMode }) => {
         }
     };
 
-    // Calculate the maximum y-axis value
+    //max y-axis value
     const maxUpperConf = activityData.reduce((max, item) => {
         return Math.max(max, item.stats.confInterval.upper);
     }, 0);
 
-    // Add a small buffer (e.g., 5%) to the max value
+    // max value buffer 5%
     const yMax = maxUpperConf * 1.05;
 
 
@@ -134,9 +134,15 @@ export const ConfidenceChart = ({ activityData, isDarkMode }) => {
                         const index = context[0].dataIndex;
                         const item = activityData[index];
                         const confInterval = item.stats.confInterval;
-                        return `95% Confidence Interval: ${confInterval.lower.toFixed(2)} - ${confInterval.upper.toFixed(2)}`;
+                        return `95% Confidence Interval: ${confInterval.lower.toExponential(2)} - ${confInterval.upper.toExponential(2)}`;
+                    },
+                    label: function (context) {
+                        const xxx=  formattedToString(context.parsed.y); 
+                        // console.log("formatted in confidence", xxx, context.parsed.y);
+                        return xxx;
                     }
-                }
+                },
+
             },
             title: {
                 display: false,
@@ -155,8 +161,12 @@ export const ConfidenceChart = ({ activityData, isDarkMode }) => {
                         size: 10,
                     },
                     color: isDarkMode ? 'white' : 'black',
-                    maxRotation: 35, // Add this line
-                    minRotation: 35, // Add this line to ensure it rotates
+                    maxRotation: 35, 
+                    minRotation: 35,
+                    callback: function (value, index) {
+                        const fullLabel = this.getLabelForValue(value);
+                        return truncatedData([fullLabel])[0];
+                    },
                 },
                 grid: {
                     color: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
@@ -167,6 +177,7 @@ export const ConfidenceChart = ({ activityData, isDarkMode }) => {
                 max: yMax,
                 ticks: {
                     color: isDarkMode ? 'white' : 'black',
+                    callback: (value) => formattedToString(value),
                 },
                 grid: {
                     color: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
@@ -176,7 +187,7 @@ export const ConfidenceChart = ({ activityData, isDarkMode }) => {
     };
 
     return (
-        <div className="w-full" style={{ height: '250px', paddingTop: '30px'}} >
+        <div className="w-full" style={{ height: '250px', paddingTop: '30px', marginTop: '-30px' }} >
             {Object.keys(chartData).length > 0 && (
                 <Bar options={chartOptions} data={chartData} plugins={[errorBarsPlugin]} />
             )}

@@ -15,10 +15,10 @@ import { act } from "react";
 
 
 
-export function AnalysisResultDiagrams({ activity, costs, stats }) {
+export function AnalysisResultDiagrams({ activity, costs, stats, desiredBins = 30 }) {
     // console.log("[AnalysisResultDiagrams] activity costs", costs);
 
-    const binSize = getDynamicBinSize(costs);
+    const binSize = getDynamicBinSize(costs, desiredBins);
     const binnedData = binData(costs, binSize, stats.min ?? 0);
     const labels = generateBinLabels(binnedData.length, binSize, stats.min ?? 0);
     // console.log("[AnalysisResultDiagrams] binnedData", binnedData, costs, stats, labels);
@@ -42,7 +42,7 @@ export function AnalysisResultDiagrams({ activity, costs, stats }) {
     return (
         <ThemeProvider theme={theme}>
             {/* <Box w="400px" p={1} borderWidth={1} borderRadius="md"> */}
-             <Box minWidth="400px" p={1} borderWidth={1} borderRadius="md">
+            <Box minWidth="400px" p={1} borderWidth={1} borderRadius="md">
                 {/* Activity Name */}
                 <Text fontWeight="semibold" color="gray.600" textAlign="center" >
                     {activity.replace(/_/g, " ")}
@@ -54,6 +54,12 @@ export function AnalysisResultDiagrams({ activity, costs, stats }) {
                         xAxis={[{ data: labels, scaleType: "band" }]}
                         series={[{ data: binnedData }]}
                         height={150}
+                        margin={{
+                            top: 20,
+                            bottom: 30,
+                            left: 50,
+                            right: 20
+                        }}
                     />
                 </Box>
 
@@ -80,7 +86,8 @@ export function AnalysisResultDiagrams({ activity, costs, stats }) {
                 {/* Stats */}
                 <Box mt={1} textAlign="center">
                     <Text fontSize="sm">
-                        Mean: {stats.mean.toFixed(2)}, Min: {stats.min.toFixed(2)}, Max: {stats.max.toFixed(2)}, StdDev: {stats.stdev.toFixed(2)}, Variance: {stats.variance.toFixed(2)}
+                        Mean: {stats.mean.toExponential(2)}, Min: {stats.min.toExponential(2)}, Max: {stats.max.toExponential(2)} <br />
+                        Standard Deviation: {stats.stdev.toExponential(2)}, Variance: {stats.variance.toExponential(2)}
                     </Text>
                 </Box>
             </Box>
@@ -93,15 +100,14 @@ export function AnalysisResultDiagrams({ activity, costs, stats }) {
 
 //#region Histogram Helpers
 
-function getDynamicBinSize(costs, desiredBins = 12) {
+function getDynamicBinSize(costs, desiredBins) {
     if (costs.length === 0) return 1; // fallback
     const min = Math.min(...costs);
     const max = Math.max(...costs);
     const range = max - min;
     const raw = range / desiredBins;
-    //   return range / desiredBins || 1; // avoid 0
 
-    // Round to nearest “nice” number (0.01, 0.05, 0.1, 0.5, 1)
+    //round to nearest nic number (0.01, 0.05, 0.1, 0.5, 1)
     const magnitude = Math.pow(10, Math.floor(Math.log10(raw)));
     const nice = Math.ceil(raw / magnitude) * magnitude;
     return nice;
@@ -118,7 +124,7 @@ function binData(data, binSize, minValue) {
         if (binIndex > maxBin) maxBin = binIndex;
     }
 
-    // Fill empty bins with 0
+    // fill empty bins with 0
     for (let i = 0; i <= maxBin; i++) {
         if (!bins[i]) bins[i] = 0;
     }
@@ -130,8 +136,8 @@ function generateBinLabels(binCount, binSize, minValue) {
     const labels = [];
     const decimals = getDecimals(binSize);
     for (let i = 0; i < binCount; i++) {
-        const start = (minValue + i * binSize).toFixed(decimals);
-        const end = (minValue + (i + 1) * binSize).toFixed(decimals);
+        const start = (minValue + i * binSize).toExponential(2)//.toFixed(decimals);
+        const end = (minValue + (i + 1) * binSize).toExponential(2)//.toFixed(decimals);
         if (decimals <= 2)
             labels.push(`${start}–${end}`);
         else

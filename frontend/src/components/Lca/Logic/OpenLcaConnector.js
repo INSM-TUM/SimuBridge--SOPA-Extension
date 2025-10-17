@@ -1,5 +1,6 @@
 import * as o from "olca-ipc";
-const ss = require('simple-statistics');
+const d3 = require('d3-array');
+
 
 
 export const getAllImpactMethods = async (apiUrl) => {
@@ -14,7 +15,7 @@ export const getImpactMethod = async (apiUrl, impactMethodId) => {
     const impactMethod = await client.get(
         o.RefType.ImpactMethod,
         { id: impactMethodId, refType: o.RefType.ImpactMethod });
-        console.log('Impact Method:', impactMethod);
+    console.log('Impact Method:', impactMethod);
     return impactMethod;
 }
 
@@ -36,44 +37,46 @@ export const calculateCostDriver = async (apiUrl, impactMethod, calculationType,
     targetDriver, onSuccess, onError) => {
     // console.log("[calculate Cost Drivers] calculation type: ", calculationType)
     if (calculationType === 'lazy') {
-    try {
-        const client = new o.IpcClient.on(apiUrl);
-        let normalizationSet = normalizationSetId && impactMethod.nwSets.filter(set => set.id == normalizationSetId)[0];
-        let calcSetup = await o.CalculationSetup.of({
-            target: targetDriver,
-            impactMethod: impactMethod,
-            nwSet: normalizationSet,
-            allocation: o.AllocationType.USE_DEFAULT_ALLOCATION,
-            withCosts: false,
-            withRegionalization: false,
-            amount: targetDriver.targetAmount,
-            unit: targetDriver.targetUnit
-        });
+        try {
+            const client = new o.IpcClient.on(apiUrl);
+            let normalizationSet = normalizationSetId && impactMethod.nwSets.filter(set => set.id == normalizationSetId)[0];
+            let calcSetup = await o.CalculationSetup.of({
+                target: targetDriver,
+                impactMethod: impactMethod,
+                nwSet: normalizationSet,
+                allocation: o.AllocationType.USE_DEFAULT_ALLOCATION,
+                withCosts: false,
+                withRegionalization: false,
+                amount: targetDriver.targetAmount,
+                unit: targetDriver.targetUnit
+            });
 
-        const result = await client?.calculate(calcSetup);
+            console.log('Calculation Setup of', targetDriver.name, ":", calcSetup);
 
-        if (!result) {
-            console.log("calculation failed: no result retrieved");
-        }
-        const s = await result.untilReady();
-        if (s.error) {
-            console.log(s.error);
-        }
+            const result = await client?.calculate(calcSetup);
 
-        const driverWeights = await result.getWeightedImpacts();
+            if (!result) {
+                console.log("calculation failed: no result retrieved");
+            }
+            const s = await result.untilReady();
+            if (s.error) {
+                console.log(s.error);
+            }
+
+            const driverWeights = await result.getWeightedImpacts();
             console.log('Driver Weights of', targetDriver.name, ":", driverWeights);
 
-        onSuccess(driverWeights);
-    }
-    catch (error) {
-        console.error('API Error:', error);
-        onError(error);
-    }
+            onSuccess(driverWeights);
+        }
+        catch (error) {
+            console.error('API Error:', error);
+            onError(error);
+        }
     } else if (calculationType === 'monte carlo') {
         try {
             let normalizationSet = normalizationSetId && impactMethod.nwSets.filter(set => set.id == normalizationSetId)[0];
-           
-            let results = await monteCarloJs(apiUrl, targetDriver, impactMethod, normalizationSet, mcIterations) // todo: add iterations dynamically
+
+            let results = await monteCarloJs(apiUrl, targetDriver, impactMethod, normalizationSet, mcIterations)
             // console.log('Monte carlooooo results of', targetDriver.name, ":", results, mcIterations);
             for (let i = 0; i < results.length; i++) {
                 // console.log("mc item:", results[i]);
@@ -85,12 +88,13 @@ export const calculateCostDriver = async (apiUrl, impactMethod, calculationType,
                 console.log("calculation failed: no result retrieved");
             }
 
-             // Sort for median and min/max
+            // Sort for median and min/max
             const sorted = [...results].sort((a, b) => a - b);
             const n = results.length;
 
             // Mean
             const mean = results.reduce((sum, x) => sum + x, 0) / n;
+
 
             // Median
             const median = n % 2 === 0
@@ -110,7 +114,13 @@ export const calculateCostDriver = async (apiUrl, impactMethod, calculationType,
                 stdDev = Math.sqrt(variance);
             }
 
-            const mode = ss.mode(sorted);
+            // const mode = ss.mode(sorted);
+            const mode = getBinnedMode(sorted);
+
+
+            // const gsd = Math.sqrt(Math.log(1 + (stdDev ** 2) / (mean ** 2)));
+            // const geoMean = mean / Math.exp(0.5 * gsd ** 2);
+            const { geoMean, gsd } = getlogDistStats(results)
 
             const mcEval = {
                 mean: mean,
@@ -118,15 +128,10 @@ export const calculateCostDriver = async (apiUrl, impactMethod, calculationType,
                 stdDev: stdDev,
                 min: min,
                 max: max,
-                mode: mode
+                mode: mode,
+                geoMean: geoMean,
+                gsd: gsd
             }
-
-            // if(stdDev < EPSILON) {
-            //     mcEval.distType = "deterministic";
-            // }else{
-            //     const distributions = fitDistributions(results);
-            //     console.log("Fitted distributions:", distributions);
-            // }
 
 
             // console.log('Monte Carlo Evaluation:', mcEval);
@@ -141,15 +146,11 @@ export const calculateCostDriver = async (apiUrl, impactMethod, calculationType,
     }
 }
 
-// function transposeArray(a) {
-//     if (!Array.isArray(a) || a.length === 0) return [];
-//     return a[0].map((_, colIndex) => a.map(row => row[colIndex]));
-// }
 
 
 async function monteCarloJs(apiUrl, targetDriver, impactMethod, normalizationSet,
     iterations = 10) {
-     console.log("[mc] start", targetDriver.id, iterations)
+    console.log("[mc] start", targetDriver.id, iterations, targetDriver)
     //let replacement_impactCathegory = {id: "f3138c2e-ea9c-305a-adf6-65e692e5b761"} //todo: replace with the actual impact cathegory; the lazy one doesnt work
     const client = new o.IpcClient.on(apiUrl);
     // schedule a first iteration
@@ -158,11 +159,13 @@ async function monteCarloJs(apiUrl, targetDriver, impactMethod, normalizationSet
         impactMethod: impactMethod,
         nwSet: normalizationSet,
         allocation: o.AllocationType.USE_DEFAULT_ALLOCATION,
-        withCosts: false,
-        withRegionalization: false
+        withCosts: true,
+        withRegionalization: false,
+        amount: targetDriver.targetAmount,
+        unit: targetDriver.targetUnit
     });
 
-    
+
     let simulator = await client.simulate(calcSetup);
 
     let xs = [];
@@ -170,17 +173,54 @@ async function monteCarloJs(apiUrl, targetDriver, impactMethod, normalizationSet
     for (let i = 0; i < iterations; i++) {
         // console.log(`Iteration ${i + 1}`);
         await simulator.simulateNext();
-        const impactResults = await simulator.getTotalImpacts();
+        const impactResults = await simulator.getWeightedImpacts();
         if (impactResults) {
-            xs.push(impactResults); // Add the value to our results array
+            xs.push(impactResults); // Add value to results array
         } else {
             console.log(`no impact values found in iteration ${i + 1}`);
         }
     }
 
-    // Dispose of the simulator to release resources
+    // Dispose of simulator to release resources
     await simulator.dispose();
-    
+
     return xs; // Return the collected values
+}
+
+function getlogDistStats(results) {
+    const logData = results.map(x => Math.log(x));
+    const n = logData.length;
+
+    // Mean and std of log values
+    const logMean = logData.reduce((sum, x) => sum + x, 0) / n;
+    const logVariance = logData.reduce((sum, x) => sum + (x - logMean) ** 2, 0) / n;
+    const logStdDev = Math.sqrt(logVariance);
+
+    // Geometric mean and GSD
+    const geoMean = Math.exp(logMean);
+    const gsd = Math.exp(logStdDev);
+    return { geoMean, gsd }
+
+}
+
+/**
+ * calculates mode for continuous data by binning
+ */
+function getBinnedMode(data) {
+    if (!data || data.length === 0) {
+        return null;
+    }
+    const histogram = d3.bin().thresholds(20);
+    const bins = histogram(data);
+    // const modalBin = d3.max(bins, (d, i) => d.length > 0 ? bins[i] : undefined);
+    const modalBin = bins.reduce((prev, current) => {
+        return (prev.length > current.length) ? prev : current;
+    });
+    if (!modalBin) {
+        return null;
+    }
+
+    const mode = (modalBin.x0 + modalBin.x1) / 2;
+    return mode;
 }
 

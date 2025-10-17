@@ -3,14 +3,17 @@ import {
     AccordionButton, AccordionPanel, AccordionIcon, Text, Divider
 } from "@chakra-ui/react";
 import { useState, useEffect } from "react";
-import { downloadFile, fetchFileBlob } from "../util/Storage";
-import JSZip from "jszip";
-import { saveAs } from "file-saver";
-import ZipUploadButton from "./Analysis/components/ZipUploadButton";
+import { downloadFile } from "../util/Storage";
+import {downloadAllRunsAsTar} from "./Analysis/analysisUtils";
+import FolderUploadButton from "./Analysis/components/FolderUploadButton";
 
 
 
-export default function ToolRunOutputCard({ projectName, response, toolName, processName, filePrefix, setResponse, setAnalysisName, durationMs, toasting }) {
+export default function ToolRunOutputCard({ 
+    projectName, response, toolName, processName, 
+    filePrefix, setResponse, setToolName, durationMs, 
+    toasting, 
+    drivers, iterations, onUploadComplete }) {
     const initialVisible = 3; // show first 3 runs by default
     const [showAll, setShowAll] = useState(false);
 
@@ -19,109 +22,46 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
             setShowAll(Array(response.length).fill(false));
         } else if (toolName !== "sobol GSA" && response && Array.isArray(response.sobolResults)) {
             setShowAll(Array(response.sobolResults.length + 2).fill(false));
+        } else {
+
+            setShowAll(false);
         }
 
     }, [toolName, response, response?.length]);
 
     let runs = Array.isArray(response) ? response : response ? [response] : [];
-    console.log("[ToolRunOutputCard] start:", projectName, response, toolName, runs, showAll);
+    // if(response) console.log("[ToolRunOutputCard] start:", projectName, response, toolName, runs, showAll);
     if (runs.length === 1)
         response = runs[0];
 
     //#region Zip upload/download handling
-    const zipUpload = (parsedResults) => {
-        console.log("Uploaded ZIP and parsed results:", parsedResults);
+    const folderUpload = (parsedResults) => {
+        // console.log("Uploaded ZIP and parsed results:", parsedResults);
         if (parsedResults.toolName === "local SA Analysis" || parsedResults.toolName === "local SA") {
             response = parsedResults.results;
         } else if (parsedResults.toolName === "sobol GSA Analysis" || parsedResults.toolName === "sobol GSA") {
             response = {
                 aMatrix: parsedResults.aMatrix,
-                bMatrix: parsedResults.bMatrix, 
+                bMatrix: parsedResults.bMatrix,
                 sobolResults: parsedResults.sobolResults
             };
-        }          
+        }
         else {
             runs = parsedResults.results;
         }
         let wholeToolName = parsedResults.toolName;
         toolName = (wholeToolName || '').endsWith(' Analysis') ? wholeToolName.slice(0, -' Analysis'.length) : wholeToolName;
-
-        setAnalysisName(toolName)
-        sessionStorage.setItem(projectName + '/analysisResults', JSON.stringify({ runs: parsedResults.results, analysisName: toolName, }));
-        // setResponse(parsedResults.results);
-        console.log("[ToolRunOutputCard] Set response to:", parsedResults.results, "and toolName to:", toolName);
-        // setResponse(["parsedResults.results"]);
-        setResponse(prevResponse => ({
-            ...prevResponse, // Keep existing properties
-            runs: parsedResults.results, // Update runs
-            analysisName: toolName,
-            //durationMs: 0, // Example duration
-            requestId: "new-request-id" // If needed
-        }));
+        if (onUploadComplete) onUploadComplete();
+        setToolName(toolName)
+        // console.log("[ToolRunOutputCard] Set response to:", parsedResults.results, "and toolName to:", toolName);
 
     }
 
-    async function zipDownloadSingle(roundOfRuns, projectName, zip) {
-        for (let idx = 0; idx < roundOfRuns.length; idx++) {
-            const res = roundOfRuns[idx];
-            if (!res.files) continue;
-
-            for (const fileName of res.files) {
-                const path = (res.requestId ? res.requestId + "/" : "") + fileName;
-                const fileData = await fetchFileBlob(projectName, path);   // <-- use fetchFileBlob for raw Blob
-                zip.file(`run${idx + 1}_${res.requestId}/${fileName}`, fileData);   // <-- replaced folder with runFolderName
-            }
-        }
-
-    }
-
-    // helper to fetch and add files to zip old
     async function downloadAllRunsAsZip(projectName, responses) {
-        const zip = new JSZip();
-
-        if (toolName === "local SA") {
-            // console.log("[zipDownload] Processing lsa driver runs:", responses, projectName);
-            const baselineDriver = responses.find(driver => driver.driverName === 'baseline').baselineResults;
-            console.log("Baseline driver:", baselineDriver, responses);
-            for (const fileName of baselineDriver.files) {
-                const path = (baselineDriver.requestId ? baselineDriver.requestId + "/" : "") + fileName;
-                const fileData = await fetchFileBlob(projectName, path);
-                zip.file(`Baseline_${baselineDriver.requestId}/${fileName}`, fileData);
-            }
-            console.log("Baseline files added.", zip);
-
-            const runs = responses.filter(driver => driver.driverName !== 'baseline');
-            for (const driverObj of runs) {
-                if (!driverObj.driverName || !driverObj.results) continue;
-                const driverFolder = zip.folder(`Driver_${driverObj.driverName}`);
-                await zipDownloadSingle(driverObj.results, projectName, driverFolder);
-            }
-        } else if (toolName === "sobol GSA") {
-            console.log("[zipDownload] Processing sobol GSA runs:", responses, projectName);
-            await zipDownloadSingle(responses.aMatrix, projectName, zip.folder("A_Matrix"));
-            await zipDownloadSingle(responses.bMatrix, projectName, zip.folder("B_Matrix"));
-            console.log("A and B matrix files added.", zip);
-            for (const driverObj of responses.sobolResults) {
-                if (!driverObj.driverName || !driverObj.results) continue;
-                const driverFolder = zip.folder(`Driver_${driverObj.driverName}`);
-                await zipDownloadSingle(driverObj.results, projectName, driverFolder);
-            }
-        }
-
-        else {
-            console.log("[zipDownload] Processing simple runs:", responses, projectName);
-            await zipDownloadSingle(responses, projectName, zip);
-
-        }
-
-        console.log("Zip file downloading starting sucessful.");
-        toasting("success", "Downloading Analysis Files", `Starting Zip file downloading sucessful. It might take a minute to show in the browser.`);
-
-        const content = await zip.generateAsync({ type: "blob" });
-        saveAs(content, `${projectName}__${toolName.replace(" ", "_")}_SimRuns_${durationMs}.zip`);
-
-
+        // console.log("[downloadAllRunsAsZip] start:", projectName, responses, toolName, iterations);
+        downloadAllRunsAsTar(projectName, responses, toolName,durationMs,drivers, toasting, iterations, response.requestId);
     }
+
     //#endregion
 
     //#region reusable Rendering components
@@ -189,15 +129,17 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
     };
 
 
-//#region RETURN render
+    //#region RETURN render
     return <Card bg="white">
         <CardHeader display="flex" alignItems="center" justifyContent="space-between">
             <Heading size='md'> Last <em color="var(--chakra-colors-gray-500)">{toolName} Analysis</em> Run Output {response && response.finished && `[${new Date(response.finished).toLocaleString()}]`}</Heading>
-            <ZipUploadButton onUpload={zipUpload} size="sm" />
+            {toolName === "monte carlo" || toolName === "sobol GSA" || toolName === "local SA" ? (
+                <FolderUploadButton onUpload={folderUpload} projectName={projectName} size="sm" />
+            )   : null}
         </CardHeader>
         <CardBody>
-           
-            {toolName === "deterministic" || toolName === "monte carlo" ? (
+
+            {toolName === "deterministic" || toolName === "Miner" || toolName === "monte carlo" ? (
                 runs.length === 0 ? (
                     <>No {processName} runs in this session yet.</>
                 ) : (
@@ -231,7 +173,7 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
                                 )}
 
                                 <Button colorScheme="blue" onClick={() => downloadAllRunsAsZip(projectName, runs)}>
-                                    Download All Runs as ZIP
+                                    Download All Runs
                                 </Button>
                             </Flex>
                         </>
@@ -255,7 +197,7 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
                                             <Button
                                                 size="sm"
                                                 onClick={(e) => {
-                                                    e.stopPropagation(); // Prevent accordion toggle
+                                                    e.stopPropagation(); // prevent accordion toggle
                                                     toggleDriverShowAll(driverIdx);
                                                 }}
                                                 ml={2}
@@ -273,7 +215,7 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
                         </Accordion>
                         <Flex mt={4} mr={4} gap={4} justifyContent="right" flexWrap="wrap">
                             <Button colorScheme="blue" onClick={() => downloadAllRunsAsZip(projectName, response)}>
-                                Download All Runs as ZIP
+                                Download All Runs
                             </Button>
                         </Flex>
                     </>
@@ -282,7 +224,7 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
                 !response || !response.aMatrix || !response.bMatrix || !response.sobolResults ? (
                     <>No {processName} runs in this session yet.</>
                 ) : (
-                    <> <Heading size='sm'  mt={2} mb={2}>Base Results</Heading>
+                    <> <Heading size='sm' mt={2} mb={2}>Base Results</Heading>
                         <Accordion allowMultiple>
                             <AccordionItem>
                                 <h2>
@@ -336,10 +278,10 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
                                 </AccordionItem>
                             ))}
                         </Accordion>
-                            <Flex mt={4} mr={4} gap={4} justifyContent="right" flexWrap="wrap">
-                        <Button colorScheme="blue" onClick={() => downloadAllRunsAsZip(projectName, response)}>
-                            Download All Runs as ZIP
-                        </Button></Flex>
+                        <Flex mt={4} mr={4} gap={4} justifyContent="right" flexWrap="wrap">
+                            <Button colorScheme="blue" onClick={() => downloadAllRunsAsZip(projectName, response)}>
+                                Download All Runs
+                            </Button></Flex>
                     </>
                 )
             ) : (
@@ -350,6 +292,6 @@ export default function ToolRunOutputCard({ projectName, response, toolName, pro
         </CardBody>
     </Card >
 
-// #endregion
+    // #endregion
 }
 

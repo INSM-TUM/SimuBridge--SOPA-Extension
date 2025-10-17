@@ -1,7 +1,8 @@
 import axios from 'axios';
 import { setFile } from '../../../util/Storage';
 import { convertScenario } from 'simulation-bridge-converter-scylla/ConvertScenario';
-import { runSimpleMonteCarloSimulation, localSensAnalysis, runSobolGSA } from "./analysisLogic";
+import { runSimpleMonteCarloSimulation, localSensAnalysis, runSobolGSA, filterRunResults } from "./analysisLogic";
+import { saveDbChunk, deleteProjectData } from '../analysisUtils';
 
 //#region main entry point
 // This is the main entry point called from AnalysisPage to run the selected analysis
@@ -12,17 +13,17 @@ export const runMultipleSimulations = async ({
   projectName,
   stateReports,
   cancelToken,
-  analysisName
+  toolName
 }) => {
   console.log("[simulationRunner] runMultipleSimulations(): called with scenarioName", scenarioName, "and mc iterations", MC_ITERATIONS);
   let variants = getData().getCurrentScenario().environmentImpactParameters.variants;
   console.log("[simulationRunner] runMultipleSimulations(): start simulation, Vaiants:", variants)
-  if (variants.reduce((sum, variant) => sum + parseInt(variant.frequency), 0) !== 100) ///todo: If variants have non-integer frequencies (e.g., decimals), the current sum check will fail.
+  if (variants.reduce((sum, variant) => sum + parseInt(variant.frequency), 0) !== 100) ///todo: If variants have  decimals the sum check will fail
   {
     stateReports.toasting("error", "Frequencies sum is not 100%", "For correct simulation, the sum of frequencies must be 100%");
 
     return;
-  }// todo: add warning for multiple of same abstract in same variant (not allowed)
+  }
 
   stateReports.setFinished(false);
   stateReports.setStarted(1);
@@ -32,39 +33,50 @@ export const runMultipleSimulations = async ({
 
     const simulator = createSimulator(scenarioData, scenarioName, stateReports, cancelToken, projectName);
     let simulationResults = {
-      analysisName,
-      runs: [],
+      toolName,
+      chunkInfo: {},
       finished: null,
-      durationMs: null
+      durationMs: null,
+      iterations: MC_ITERATIONS,
+      driverCount: scenarioData.environmentImpactParameters.costDrivers.length
     };
-    simulationResults.analysisName = analysisName;
+    simulationResults.toolName = toolName;
+    deleteProjectData(projectName);
     const startTime = Date.now();
+    const seed = 42;
 
-    switch (analysisName) {
+    switch (toolName) {
       case "monte carlo":
         console.log("runSimpleMonteCarloSimulation with scenarioData", scenarioData, "and mc iterations", MC_ITERATIONS);
-        simulationResults.runs = await runSimpleMonteCarloSimulation({ MC_ITERATIONS, scenarioData, simulator, stateReports });
+        simulationResults.chunkInfo = await runSimpleMonteCarloSimulation({ MC_ITERATIONS, scenarioData, simulator, stateReports, seed, projectName });
         console.log("simulation mc Run completed");
         break;
       case "local SA":
         console.log("localSensAnalysis with scenarioData", scenarioData, "and mc iterations", MC_ITERATIONS);
-        simulationResults.runs = await localSensAnalysis({ MC_ITERATIONS, scenarioData, simulator, stateReports });
+        simulationResults.chunkInfo = await localSensAnalysis({ MC_ITERATIONS, scenarioData, simulator, stateReports, seed, projectName });
         console.log("simulation local SA Run completed",);
         break;
 
       case "sobol GSA":
         console.log("[analysisLogic] sobol GSA with scenarioData", scenarioData, "and mc iterations", MC_ITERATIONS);
-        simulationResults.runs = await runSobolGSA({iterations:MC_ITERATIONS, abstractDrivers: scenarioData.environmentImpactParameters.costDrivers, simulator, stateReports})
+        simulationResults.chunkInfo = await runSobolGSA({ iterations: MC_ITERATIONS, abstractDrivers: scenarioData.environmentImpactParameters.costDrivers, simulator, stateReports, seed, projectName })
         console.log("simulation sobol GSA completed",);
         break;
       case "deterministic":
         simulationResults.runs = []
-        const detRun= await simulator(scenarioData.environmentImpactParameters.costDrivers, 1);
-        simulationResults.runs.push(detRun);
+        const detRun = await simulator(scenarioData.environmentImpactParameters.costDrivers, 1);
+        if (detRun === "aborted" || detRun.error) {
+          console.log("[runDeterministicSimulation] Analysis aborted", detRun);
+          break
+        }
+        const filteredResults = filterRunResults([detRun]);
+        await saveDbChunk(projectName, `det_chunk_0`, filteredResults);
+        // simulationResults.runs.push(detRun);
+        simulationResults.chunkInfo = { isChunked: true, chunkCount: 1 };
         console.log("simulation deterministic Run completed");
         break;
       default:
-        console.log("Unknown analysis name:", analysisName);
+        console.log("Unknown analysis name:", toolName);
         break;
     }
 
@@ -78,13 +90,10 @@ export const runMultipleSimulations = async ({
     stateReports.setStarted(100)
     stateReports.setFinished(true);
 
-    stateReports.toasting("success", "Monte Carlo Simulation", `Completed ${MC_ITERATIONS} simulations in ${simulationResults.durationMs} ms`);
+    stateReports.toasting("success", "Monte Carlo Simulation", `Completed ${MC_ITERATIONS} simulations in ${simulationResults.durationMs} ms`)
     console.log("[simulationRunner] runMultipleSimulations(): Simulation Results:", simulationResults);
-    sessionStorage.setItem(projectName + '/analysisResults', JSON.stringify(simulationResults));
-    stateReports.setResponse(simulationResults);
-    // stateReports.setResponse(responseObject);
+    await saveDbChunk(projectName, 'analysisResults', simulationResults);
 
-    // stateReports.toasting a success message
     stateReports.toasting("success", "Success", "Analysis was successful");
 
   } catch (err) {
@@ -95,22 +104,16 @@ export const runMultipleSimulations = async ({
   }
 }
 
-//#endregion
+//#endregion main entry point
 
 //#region prepare and communicate with simulation API 
 /**
- * Simulator to give to the specific analysis loop functions without sampledGlobalConfig
- * 
- * @param {*} stateReports 
- * @param {*} cancelToken 
- * @param {*} projectName 
- * @returns 
+ * Simulator to give to the specific uncertainty quantification tools
  */
 function createSimulator(scenarioData, scenarioName, stateReports, cancelToken, projectName) {
   return async function (drivers, iteration) {
     // console.log("[createSimulator()] drivers", drivers, scenarioData);
     // Deep copy to avoid mutating original
-
     let scenarioName_i = scenarioName + "_" + iteration;
     const scenarioCopy = structuredClone(scenarioData);
     scenarioCopy.environmentImpactParameters.costDrivers = drivers;
@@ -145,9 +148,6 @@ const simulate = async (globalConfig, simConfig, scenarioName, processModel, bpm
   const requestId = 'request' + Math.random();
   const formData = new FormData();
 
-  // Creating a cancel token and assigning it to the current source
-  // source.current = axios.CancelToken.source();
-  // console.log("[simulate] with global:", globalConfig);
   try {
     const bpmnFile = new File([bpmn], processModel.name + '.bpmn')
     const globalConfigFile = new File([globalConfig], scenarioName + '_Global.xml')
@@ -159,7 +159,6 @@ const simulate = async (globalConfig, simConfig, scenarioName, processModel, bpm
     // console.log("[simulation] formData", formData);
 
     // todo: reactivate
-    // Sending a POST request to apiTool.py in the Scylla-Container subproject, with the cancel token attached
     const r = await axios.post("http://127.0.0.1:8080/scyllaapi", formData, {
       headers: {
         'requestId': requestId,
@@ -173,7 +172,6 @@ const simulate = async (globalConfig, simConfig, scenarioName, processModel, bpm
     // console.log("[simulation] response", r.data);
 
     // Setting the response state and updating the finished and started states
-
     const responseObject = {
       message: r.data.message,
       files: r.data.files.map(file => file.name),
@@ -181,25 +179,18 @@ const simulate = async (globalConfig, simConfig, scenarioName, processModel, bpm
       requestId
     }
     // const responseObject = { }
-
-
-    // stateReports.setResponse(responseObject);
-    // console.log("[simulate] response", responseObject);
-    // sessionStorage.setItem(projectName+'/lastAlanysisResponse', JSON.stringify(responseObject));
     return responseObject;
   } catch (err) {
-    // If there's a cancellation error, toast a success message
     if (axios.isCancel(err)) {
-      stateReports.toasting("success", "Success", "Analysis was canceled");
+      // stateReports.toasting("success", "Success", "Analysis was canceled");
+
     } else {
-      // Otherwise, stateReports.toast an error message
       stateReports.setErrored(true);
       console.log("[Simulation Mistake]", err, globalConfig)
-      //TODO also display error occurence
-      stateReports.toasting("error", "error", "Simulation was not successful");
     }
     return { 'error': err };
   }
 };
 
 //#endregion
+

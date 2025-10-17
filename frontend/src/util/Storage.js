@@ -125,9 +125,7 @@ export async function downloadFile(projectName, fileName, encoding='charset=UTF-
 }
 
 export async function fetchFileBlob(projectName, filePath) {
-    const { data } = await getFile(projectName, filePath); // use the working API
-    // Convert string/arrayBuffer to Blob depending on what getFile returns
-    // Assuming data is string:
+    const { data } = await getFile(projectName, filePath);
     return new Blob([data]);
 }
 

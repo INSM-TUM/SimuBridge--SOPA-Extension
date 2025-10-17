@@ -26,6 +26,8 @@ const FormattedConcreteDriver = ({ concreteCostDriver, cType, onUpdate }) => {
     median: formatNumber(cost.median),
     stdDev: formatNumber(cost.stdDev),
     mode: formatNumber(cost.mode),
+    gsd: formatNumber(cost.gsd),
+    geoMean: formatNumber(cost.geoMean),
   };
 
 
