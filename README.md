@@ -36,6 +36,8 @@ This step only fetches the impact method and normalization set. The cost computa
 - **Parameter Configuration**: Configure distribution parameters for each concrete driver:
 - **Information Tooltips**: Access detailed descriptions of concrete cost drivers via info icons
 
+### Output Visualization (added)
+Shows a comparison of the environmental impact score of previously run scenarios.
 
 ## 📊 Supported Distribution Types
 The system supports various statistical distributions for parameterizing concrete cost drivers:
@@ -51,5 +53,32 @@ The system supports various statistical distributions for parameterizing concret
 
 Each distribution type includes appropriate parameter validation and supports different target units for environmental impact calculations.
 
+##  Code Structure 
+This repository adds the following components and logic classes to the base SimuBridge project:
 
+Lca/  
+├── Components/  
+│   ├── BasicSpinner.jsx  
+│   ├── FormattedConcreteDriver.jsx  
+│   ├── LcaIntegration.jsx  
+│   ├── LcaVariantsConfiguration.jsx  
+│   ├── OlcaConnectionAlert.jsx  
+│   └── VariantEditor.jsx  
+└── Logic/  
+    ├── LcaDataManager.js  
+    ├── LcaIntegrationUtils.js  
+    └── OpenLcaConnector.js
+```
 
+### Components
+- `BasicSpinner.jsx`: Auxiliary React component for the loading spinner.
+- `FormattedConcreteDriver.jsx`: Component to display formatted data of concrete cost drivers.
+- `LcaIntegration.jsx`: Interface for configuring external LCA data integration.
+- `LcaVariantsConfiguration.jsx`: Manages the mapping of abstract and concrete cost drivers for variants.
+- `VariantEditor.jsx`: UI component for creating or editing variants.
+- `OlcaConnectionAlert.jsx`: Notifies about the OpenLCA connection status.
+
+### Logic
+- `LcaDataManager.js`: Manages app data storage.
+- `LcaIntegrationUtils.js`: Handles requests to external LCA systems.
+- `OpenLcaConnector.js`: Specialized connector for OpenLCA software integration.
